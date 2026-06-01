@@ -33,6 +33,15 @@ import {
   type TripLogistics,
 } from './lib/trip'
 import { pathFor, resolveView, type View } from './lib/routes'
+import {
+  buildShareSummary,
+  featuredItineraries,
+  getDashboardRecommendations,
+  getTravelerTrends,
+  tripReadiness,
+  type DashboardRecommendation,
+  type FeaturedItinerary,
+} from './lib/dashboard'
 
 const KEYS = {
   form: 'tinytrip:form',
@@ -54,6 +63,12 @@ function downloadText(filename: string, content: string, type: string) {
 
 function slug(value: string) {
   return value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'tiny-trip'
+}
+
+function endDateFrom(startDate: string, days: number) {
+  const date = new Date(`${startDate}T00:00:00`)
+  date.setDate(date.getDate() + Math.max(days - 1, 0))
+  return date.toISOString().slice(0, 10)
 }
 
 function useRoute() {
@@ -120,12 +135,16 @@ function DashboardPage({ go }: { go: (view: View) => void }) {
   const [plan, setPlan] = useState<DayPlan[]>(() => safeReadJson(localStorage.getItem(KEYS.plan), generatePlan(sampleTrip)))
   const [savedTrips, setSavedTrips] = useState<SavedTrip[]>(() => safeReadJson(localStorage.getItem(KEYS.saved), []))
   const [activeTripId, setActiveTripId] = useState<string>(() => localStorage.getItem(KEYS.active) ?? '')
-  const [panel, setPanel] = useState<'setup' | 'saved' | 'export'>('setup')
+  const [panel, setPanel] = useState<'overview' | 'setup' | 'saved' | 'explore' | 'share' | 'export'>('overview')
   const [toast, setToast] = useState('')
 
   const days = useMemo(() => dayCount(form.startDate, form.endDate), [form.startDate, form.endDate])
   const currentTrip = useMemo(() => makeSavedTrip(form, logistics, plan, savedTrips.find((trip) => trip.id === activeTripId)), [activeTripId, form, logistics, plan, savedTrips])
   const activeSavedTrip = savedTrips.find((trip) => trip.id === activeTripId)
+  const readiness = useMemo(() => tripReadiness(form, logistics, plan, Boolean(activeSavedTrip)), [activeSavedTrip, form, logistics, plan])
+  const recommendations = useMemo(() => getDashboardRecommendations(form, logistics), [form, logistics])
+  const trends = useMemo(() => getTravelerTrends(form), [form])
+  const shareSummary = useMemo(() => buildShareSummary(currentTrip), [currentTrip])
   const heroPhoto = photoForDestination(form.destination)
   const error = !form.destination.trim() ? 'Destination required.' : days < 1 ? 'End date must be after start date.' : days > 14 ? 'Max 14 days.' : ''
 
@@ -153,12 +172,25 @@ function DashboardPage({ go }: { go: (view: View) => void }) {
     setActiveTripId(trip.id)
     notify('Trip saved')
   }
-  function loadTrip(trip: SavedTrip) { setForm(trip.form); setLogistics(trip.logistics); setPlan(trip.plan); setActiveTripId(trip.id); setPanel('setup'); notify('Trip loaded') }
+  function loadTrip(trip: SavedTrip) { setForm(trip.form); setLogistics(trip.logistics); setPlan(trip.plan); setActiveTripId(trip.id); setPanel('overview'); notify('Trip loaded') }
   function updateActivity(dayId: string, activityId: string, patch: Partial<Activity>) {
     setPlan((current) => current.map((day) => day.id === dayId ? { ...day, activities: day.activities.map((activity) => activity.id === activityId ? { ...activity, ...patch } : activity) } : day))
   }
   function addActivity(dayId: string) {
     setPlan((current) => current.map((day) => day.id === dayId ? { ...day, activities: [...day.activities, { id: `${day.id}-${Date.now()}`, slot: 'Flex', title: 'New item', note: 'Add detail here.', cost: '$', location: '' }] } : day))
+  }
+  function addRecommendation(rec: DashboardRecommendation) {
+    setPlan((current) => current.map((day, index) => index === 0 ? { ...day, activities: [...day.activities, { id: `${day.id}-${rec.id}-${Date.now()}`, slot: rec.slot, title: rec.title, note: rec.reason, cost: rec.cost, location: rec.title }] } : day))
+    notify('Recommendation added')
+  }
+  function cloneTemplate(template: FeaturedItinerary) {
+    const nextForm = { ...sampleTrip, destination: template.destination, interests: template.tags.slice(0, 3), pace: 'Balanced' as Pace, startDate: form.startDate, endDate: endDateFrom(form.startDate, template.days) }
+    setForm(nextForm)
+    setLogistics(emptyLogistics)
+    setPlan(generatePlan(nextForm))
+    setActiveTripId('')
+    setPanel('overview')
+    notify('Template cloned')
   }
   function removeActivity(dayId: string, activityId: string) {
     setPlan((current) => current.map((day) => day.id === dayId ? { ...day, activities: day.activities.filter((activity) => activity.id !== activityId) } : day))
@@ -183,8 +215,11 @@ function DashboardPage({ go }: { go: (view: View) => void }) {
       <aside className="app-sidebar">
         <button className="brand link-button" onClick={() => go('marketing')}><span>✈</span>Tiny Trip</button>
         <div className="sidebar-actions">
-          <button className={panel === 'setup' ? 'selected' : ''} onClick={() => setPanel('setup')}>Plan setup</button>
+          <button className={panel === 'overview' ? 'selected' : ''} onClick={() => setPanel('overview')}>Dashboard</button>
+          <button className={panel === 'setup' ? 'selected' : ''} onClick={() => setPanel('setup')}>Plan editor</button>
+          <button className={panel === 'explore' ? 'selected' : ''} onClick={() => setPanel('explore')}>Explore</button>
           <button className={panel === 'saved' ? 'selected' : ''} onClick={() => setPanel('saved')}>Saved trips <small>{savedTrips.length}</small></button>
+          <button className={panel === 'share' ? 'selected' : ''} onClick={() => setPanel('share')}>Share</button>
           <button className={panel === 'export' ? 'selected' : ''} onClick={() => setPanel('export')}>Export</button>
         </div>
         <button className="ghost compact" onClick={() => go('login')}>Log out demo</button>
@@ -198,6 +233,12 @@ function DashboardPage({ go }: { go: (view: View) => void }) {
 
         <section className="app-grid">
           <aside className="control-card">
+            {panel === 'overview' && <div className="panel-stack">
+              <h2>Dashboard</h2>
+              <section className="readiness-card"><div><strong>{readiness.score}%</strong><span>Trip readiness</span></div><progress value={readiness.score} max="100" />{readiness.items.map((item) => <p key={item.label} className={item.done ? 'done' : ''}>{item.done ? '✓' : '•'} {item.label}</p>)}</section>
+              <section className="mini-card"><h3>Recommended next</h3>{recommendations.slice(0, 3).map((rec) => <article className="recommend-row" key={rec.id}><div><b>{rec.title}</b><span>{rec.tag} · {rec.cost}</span></div><button onClick={() => addRecommendation(rec)}>Add</button></article>)}</section>
+              <section className="mini-card"><h3>What travellers often do</h3>{trends.map((trend) => <p key={trend.label}><b>{trend.percent}%</b> {trend.label}</p>)}</section>
+            </div>}
             {panel === 'setup' && <div className="panel-stack">
               <h2>Plan setup</h2>
               <label>Destination<input value={form.destination} onChange={(event) => update('destination', event.target.value)} /></label>
@@ -211,7 +252,9 @@ function DashboardPage({ go }: { go: (view: View) => void }) {
               <button className="primary" onClick={generate} disabled={Boolean(error)}>Generate plan</button>
               <button className="ghost" onClick={saveTrip}>Save trip</button>
             </div>}
+            {panel === 'explore' && <div className="panel-stack"><h2>Explore</h2><section className="mini-card"><h3>Recommendations</h3>{recommendations.map((rec) => <article className="recommend-row" key={rec.id}><div><b>{rec.title}</b><span>{rec.reason}</span></div><button onClick={() => addRecommendation(rec)}>Add</button></article>)}</section><section className="mini-card"><h3>Highest-rated itineraries</h3>{featuredItineraries.map((template) => <article className="template-row" key={template.id}><div><b>{template.title}</b><span>{template.days} days · ★ {template.rating} · {template.saves} saves</span><p>{template.angle}</p></div><button onClick={() => cloneTemplate(template)}>Clone</button></article>)}</section></div>}
             {panel === 'saved' && <div className="panel-stack"><h2>Saved trips</h2>{savedTrips.length === 0 ? <p className="muted">No saved trips yet.</p> : savedTrips.map((trip) => <article className="saved-row" key={trip.id}><strong>{trip.name}</strong><span>{trip.form.destination} · {dayCount(trip.form.startDate, trip.form.endDate)} days</span><div><button onClick={() => loadTrip(trip)}>Open</button><button onClick={() => setSavedTrips((current) => upsertSavedTrip(current, duplicateTrip(trip)))}>Duplicate</button><button onClick={() => setSavedTrips((current) => current.filter((item) => item.id !== trip.id))}>Delete</button></div></article>)}</div>}
+            {panel === 'share' && <div className="panel-stack"><h2>Share itinerary</h2><p className="muted">Friend-friendly summary. No public backend yet, so this copies the plan text.</p><textarea readOnly value={shareSummary} rows={10} /><button className="primary" onClick={() => navigator.clipboard.writeText(shareSummary).then(() => notify('Share summary copied'))}>Copy share summary</button><button className="ghost" onClick={() => window.print()}>Print share view</button></div>}
             {panel === 'export' && <div className="panel-stack"><h2>Export</h2><button className="ghost" onClick={() => navigator.clipboard.writeText(tripToMarkdown(currentTrip)).then(() => notify('Copied'))}>Copy Markdown</button><button className="ghost" onClick={() => exportFile('md')}>Download Markdown</button><button className="ghost" onClick={() => exportFile('json')}>Download JSON backup</button><button className="ghost" onClick={() => exportFile('ics')}>Download calendar</button><button className="ghost" onClick={() => window.print()}>Print</button><label className="file-button">Import JSON<input hidden type="file" accept="application/json,.json" onChange={(event) => { const file = event.target.files?.[0]; if (file) void importTrip(file) }} /></label></div>}
           </aside>
 

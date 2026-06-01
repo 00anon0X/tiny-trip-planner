@@ -103,6 +103,23 @@ details > label, details > .chips { margin-top: 12px; }
 .activity-editor textarea { grid-column: 1 / -1; }
 .simple-activity a, .simple-activity button { min-height: 36px; padding: 0 12px; }
 .add-line { margin-top: 10px; width: 100%; color: var(--accent-dark); background: #fff4f6; }
+
+.readiness-card { display: grid; gap: 10px; padding: 16px; border-radius: 22px; background: linear-gradient(135deg, #1f1f1f, #4b2a34); color: white; }
+.readiness-card strong { display: block; font-size: 2.5rem; letter-spacing: -.06em; }
+.readiness-card span { color: rgba(255,255,255,.72); font-weight: 850; }
+.readiness-card progress { width: 100%; height: 10px; accent-color: #ff385c; }
+.readiness-card p { margin: 0; color: rgba(255,255,255,.72); font-weight: 750; }
+.readiness-card p.done { color: white; }
+.mini-card { display: grid; gap: 10px; padding: 14px; border: 1px solid var(--line); border-radius: 20px; background: #fff; }
+.mini-card h3 { margin: 0; letter-spacing: -.035em; }
+.mini-card p { margin: 0; color: var(--muted); line-height: 1.45; }
+.recommend-row, .template-row { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 10px; align-items: center; padding: 10px 0; border-top: 1px solid var(--line); }
+.recommend-row:first-of-type, .template-row:first-of-type { border-top: 0; }
+.recommend-row b, .template-row b { display: block; letter-spacing: -.02em; }
+.recommend-row span, .template-row span { display: block; margin-top: 3px; color: var(--muted); font-weight: 750; font-size: .92rem; }
+.template-row p { margin: 5px 0 0; font-size: .92rem; }
+.recommend-row button, .template-row button { min-height: 38px; padding: 0 12px; border: 1px solid var(--line); border-radius: 999px; background: #fff4f6; color: var(--accent-dark); font-weight: 900; }
+
 .toast { position: fixed; right: 22px; bottom: 22px; z-index: 10; padding: 13px 16px; border-radius: 18px; background: var(--ink); color: white; font-weight: 900; box-shadow: var(--shadow); }
 @media (max-width: 980px) {
   .landing-hero, .feature-strip, .dashboard-page, .app-grid, .app-header { grid-template-columns: 1fr; }
