@@ -33,6 +33,53 @@ type DayPlan = {
 
 const interests = ['Food', 'Culture', 'Outdoors', 'Hidden gems', 'Shopping', 'Nightlife', 'Family']
 
+const travelPhotos = [
+  {
+    city: 'Lisbon',
+    label: 'Alfama morning light',
+    url: 'https://upload.wikimedia.org/wikipedia/commons/thumb/b/b0/Alfama%2C_Lisbon_%28DSC03367%29.jpg/1280px-Alfama%2C_Lisbon_%28DSC03367%29.jpg',
+  },
+  {
+    city: 'Kyoto',
+    label: 'temple paths and quiet streets',
+    url: 'https://upload.wikimedia.org/wikipedia/commons/thumb/8/83/Kiyomizu-dera%2C_Kyoto%2C_November_2016_-01.jpg/1280px-Kiyomizu-dera%2C_Kyoto%2C_November_2016_-01.jpg',
+  },
+  {
+    city: 'Seoul',
+    label: 'neon dinner streets',
+    url: 'https://upload.wikimedia.org/wikipedia/commons/thumb/8/88/Myeongdong_night_market_seoul_1.jpg/1280px-Myeongdong_night_market_seoul_1.jpg',
+  },
+]
+
+const destinationPhotoSets: Record<string, string[]> = {
+  lisbon: [
+    'https://upload.wikimedia.org/wikipedia/commons/thumb/b/b0/Alfama%2C_Lisbon_%28DSC03367%29.jpg/1280px-Alfama%2C_Lisbon_%28DSC03367%29.jpg',
+    'https://upload.wikimedia.org/wikipedia/commons/thumb/5/58/Alfama%2C_Lisbon_%28DSC03371%29.jpg/1280px-Alfama%2C_Lisbon_%28DSC03371%29.jpg',
+    'https://upload.wikimedia.org/wikipedia/commons/thumb/d/de/Lissabon_-_Alfama_-_Largo_Santa_Luzia_6.jpg/1280px-Lissabon_-_Alfama_-_Largo_Santa_Luzia_6.jpg',
+  ],
+  kyoto: [
+    'https://upload.wikimedia.org/wikipedia/commons/thumb/8/83/Kiyomizu-dera%2C_Kyoto%2C_November_2016_-01.jpg/1280px-Kiyomizu-dera%2C_Kyoto%2C_November_2016_-01.jpg',
+    'https://upload.wikimedia.org/wikipedia/commons/thumb/a/ae/Kiyomizu-dera%2C_Kyoto%2C_November_2016_-02.jpg/1280px-Kiyomizu-dera%2C_Kyoto%2C_November_2016_-02.jpg',
+    'https://upload.wikimedia.org/wikipedia/commons/thumb/1/10/Kiyomizu-dera%2C_Kyoto%2C_November_2016_-06.jpg/1280px-Kiyomizu-dera%2C_Kyoto%2C_November_2016_-06.jpg',
+  ],
+  seoul: [
+    'https://upload.wikimedia.org/wikipedia/commons/thumb/8/88/Myeongdong_night_market_seoul_1.jpg/1280px-Myeongdong_night_market_seoul_1.jpg',
+    'https://upload.wikimedia.org/wikipedia/commons/thumb/6/6b/Myeongdong_night_market_seoul_2.jpg/1280px-Myeongdong_night_market_seoul_2.jpg',
+    'https://upload.wikimedia.org/wikipedia/commons/thumb/9/92/Namdaemun-ro_and_Aloft_Seoul_Myeongdong_by_night.jpg/1280px-Namdaemun-ro_and_Aloft_Seoul_Myeongdong_by_night.jpg',
+  ],
+}
+
+function photosForDestination(destination: string) {
+  const normalized = destination.toLowerCase()
+  const key = Object.keys(destinationPhotoSets).find((city) => normalized.includes(city))
+  return key ? destinationPhotoSets[key] : travelPhotos.map((photo) => photo.url)
+}
+
+function photoForDestination(destination: string) {
+  const normalized = destination.toLowerCase()
+  return travelPhotos.find((photo) => normalized.includes(photo.city.toLowerCase())) ?? travelPhotos[0]
+}
+
 const sampleTrip: TripForm = {
   destination: 'Lisbon',
   startDate: '2026-07-10',
@@ -179,6 +226,8 @@ function App() {
     }
   })
   const [copied, setCopied] = useState(false)
+  const activePhoto = photoForDestination(form.destination)
+  const dayPhotos = photosForDestination(form.destination)
 
   const days = useMemo(() => dayCount(form.startDate, form.endDate), [form.startDate, form.endDate])
   const error = !form.destination.trim()
@@ -296,12 +345,26 @@ function App() {
             <button type="button" className="ghost" onClick={() => { setForm(sampleTrip); setPlan(generatePlan(sampleTrip)) }}>Load Lisbon sample</button>
           </div>
         </div>
-        <aside className="hero-card" aria-label="Trip preview">
-          <span className="pin">📍</span>
-          <strong>{form.destination || 'Your destination'}</strong>
-          <p>{Math.max(days, 0)} day{days === 1 ? '' : 's'} · {form.travelers} traveler{form.travelers === 1 ? '' : 's'} · {form.pace}</p>
-          <div className="mini-route"><span /> <span /> <span /></div>
+        <aside className="hero-card photo-card" aria-label="Trip preview">
+          <img src={activePhoto.url} alt={`${activePhoto.city} travel inspiration`} />
+          <div className="photo-overlay">
+            <span className="pin">📍 {activePhoto.label}</span>
+            <strong>{form.destination || 'Your destination'}</strong>
+            <p>{Math.max(days, 0)} day{days === 1 ? '' : 's'} · {form.travelers} traveler{form.travelers === 1 ? '' : 's'} · {form.pace}</p>
+          </div>
         </aside>
+      </section>
+
+      <section className="photo-strip" aria-label="Travel inspiration photos">
+        {travelPhotos.map((photo) => (
+          <article key={photo.city}>
+            <img src={photo.url} alt={`${photo.city} inspiration`} loading="lazy" />
+            <div>
+              <span>{photo.city}</span>
+              <p>{photo.label}</p>
+            </div>
+          </article>
+        ))}
       </section>
 
       <section className="workspace" id="planner">
@@ -372,6 +435,7 @@ function App() {
           <div className="day-stack">
             {plan.map((day, dayIndex) => (
               <article className="day-card" key={day.id}>
+                <div className="day-photo" style={{ backgroundImage: `url(${dayPhotos[dayIndex % dayPhotos.length]})` }} />
                 <header>
                   <span className="day-number">Day {dayIndex + 1}</span>
                   <div>
@@ -404,7 +468,7 @@ function App() {
       </section>
 
       <section className="extras" id="packing">
-        <article>
+        <article className="image-extra packing-extra">
           <span>🎒</span>
           <h3>Tiny packing list</h3>
           <ul>
@@ -414,12 +478,12 @@ function App() {
             <li>Weather layer</li>
           </ul>
         </article>
-        <article>
+        <article className="image-extra budget-extra">
           <span>💸</span>
           <h3>Budget guardrail</h3>
           <p>{form.budget === 'Shoestring' ? 'Prioritize markets, transit, and free viewpoints.' : form.budget === 'Comfort' ? 'Mix paid anchors with low-cost wandering blocks.' : 'Book one memorable meal or guided activity early.'}</p>
         </article>
-        <article>
+        <article className="image-extra map-extra">
           <span>🗺️</span>
           <h3>Useful links</h3>
           <a href={`https://www.google.com/maps/search/${encodeURIComponent(form.destination)}`} target="_blank">Open map search</a>
