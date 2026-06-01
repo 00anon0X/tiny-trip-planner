@@ -144,3 +144,23 @@ details > label, details > .chips { margin-top: 12px; }
   .dashboard-page, .app-grid { display: block; padding: 0; }
   .app-header, .itinerary-card, .simple-day { box-shadow: none; break-inside: avoid; }
 }
+
+.trip-card-row, .check-row { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 10px; align-items: center; padding: 9px 0; border-top: 1px solid var(--line); }
+.check-row { grid-template-columns: auto minmax(0,1fr); cursor: pointer; font-weight: 850; color: var(--muted); }
+.check-row input { width: 18px; height: 18px; accent-color: var(--accent); }
+.trip-card { background: linear-gradient(180deg, #fff, #fff8f2); }
+.recommend-row > div:last-child { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+.recommend-row > div:last-child button { min-width: 56px; }
+.warning { color: #9f3412 !important; }
+.info { color: var(--muted) !important; }
+.share-page { min-height: 100vh; padding: 22px; background: radial-gradient(circle at top left, #fff7ed, transparent 32%), var(--bg); }
+.share-sheet { width: min(920px, 100%); margin: 42px auto; padding: clamp(22px, 4vw, 46px); border: 1px solid var(--line); border-radius: 34px; background: rgba(255,255,255,.94); box-shadow: var(--shadow); }
+.share-sheet h1 { margin: 0; font-size: clamp(2rem, 5vw, 4rem); letter-spacing: -.07em; }
+.share-sheet > p { color: var(--muted); font-weight: 850; }
+.share-day { margin-top: 20px; padding-top: 20px; border-top: 1px solid var(--line); }
+.share-day h2 { margin: 0 0 6px; letter-spacing: -.04em; }
+.share-day > p { margin: 0 0 12px; color: var(--muted); font-weight: 750; }
+.share-item { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 8px 14px; padding: 12px 0; border-top: 1px solid #f1e7dd; }
+.share-item span { color: var(--muted); line-height: 1.45; }
+.share-item a { grid-row: span 2; align-self: center; }
+@media print { .app-sidebar, .marketing-nav, .toast, .hero-actions, button { display: none !important; } .share-page, .dashboard-page { background: white; padding: 0; } .share-sheet, .itinerary-card { box-shadow: none; border: 0; } }
