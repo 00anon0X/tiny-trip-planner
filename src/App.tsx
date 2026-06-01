@@ -260,12 +260,12 @@ function DashboardPage({ go }: { go: (view: View) => void }) {
       <aside className="app-sidebar">
         <button className="brand link-button" onClick={() => go('marketing')}><span>✈</span>Tiny Trip</button>
         <div className="sidebar-actions">
-          <button className={panel === 'overview' ? 'selected' : ''} onClick={() => setPanel('overview')}>Dashboard</button>
-          <button className={panel === 'setup' ? 'selected' : ''} onClick={() => setPanel('setup')}>Plan editor</button>
-          <button className={panel === 'explore' ? 'selected' : ''} onClick={() => setPanel('explore')}>Explore</button>
-          <button className={panel === 'saved' ? 'selected' : ''} onClick={() => setPanel('saved')}>My Trips <small>{savedTrips.length}</small></button>
-          <button className={panel === 'share' ? 'selected' : ''} onClick={() => setPanel('share')}>Share</button>
-          <button className={panel === 'export' ? 'selected' : ''} onClick={() => setPanel('export')}>Export</button>
+          <button aria-current={panel === 'overview' ? 'page' : undefined} className={panel === 'overview' ? 'selected' : ''} onClick={() => setPanel('overview')}>Dashboard</button>
+          <button aria-current={panel === 'setup' ? 'page' : undefined} className={panel === 'setup' ? 'selected' : ''} onClick={() => setPanel('setup')}>Plan editor</button>
+          <button aria-current={panel === 'explore' ? 'page' : undefined} className={panel === 'explore' ? 'selected' : ''} onClick={() => setPanel('explore')}>Explore</button>
+          <button aria-current={panel === 'saved' ? 'page' : undefined} className={panel === 'saved' ? 'selected' : ''} onClick={() => setPanel('saved')}>My Trips <small>{savedTrips.length}</small></button>
+          <button aria-current={panel === 'share' ? 'page' : undefined} className={panel === 'share' ? 'selected' : ''} onClick={() => setPanel('share')}>Share</button>
+          <button aria-current={panel === 'export' ? 'page' : undefined} className={panel === 'export' ? 'selected' : ''} onClick={() => setPanel('export')}>Export</button>
         </div>
         <button className="ghost compact" onClick={() => go('login')}>Log out demo</button>
       </aside>

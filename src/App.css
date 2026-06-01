@@ -29,6 +29,7 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 .primary { background: var(--ink); color: white; box-shadow: 0 18px 34px rgba(31,31,31,.18); }
 .ghost, .compact, .chips button, .saved-row button, .file-button, .itinerary-toolbar a, .simple-activity button, .simple-activity a, .add-line { background: #fff; color: var(--ink); border-color: var(--line); }
 button:hover, a:hover, .file-button:hover { transform: translateY(-1px); }
+button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible, summary:focus-visible, .file-button:focus-within { outline: 3px solid rgba(255,56,92,.38); outline-offset: 3px; }
 .eyebrow { margin: 0 0 12px; color: var(--accent-dark); font-size: .76rem; font-weight: 900; letter-spacing: .14em; text-transform: uppercase; }
 .marketing-page { min-height: 100vh; padding: 22px; background: radial-gradient(circle at 15% 0, rgba(255,56,92,.12), transparent 32%), linear-gradient(180deg, #fff 0, #f6f4f1 100%); }
 .marketing-nav { width: min(1120px,100%); margin: 0 auto; display: flex; justify-content: space-between; align-items: center; padding: 10px; }
@@ -130,14 +131,28 @@ details > label, details > .chips { margin-top: 12px; }
 }
 @media (max-width: 640px) {
   .marketing-page, .dashboard-page { padding: 10px; }
+  .dashboard-page { gap: 10px; }
   .landing-hero { margin-top: 34px; }
   .landing-copy h1 { font-size: 3.4rem; }
   .landing-card, .landing-card img { min-height: 330px; height: 330px; }
   .feature-strip { grid-template-columns: 1fr; }
+  .app-sidebar { position: sticky; top: 0; z-index: 20; margin: -10px -10px 0; padding: 10px; gap: 10px; border-radius: 0 0 24px 24px; background: rgba(255,255,255,.94); backdrop-filter: blur(16px); }
+  .app-sidebar .brand { justify-content: center; }
+  .sidebar-actions { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 4px; scroll-snap-type: x mandatory; -webkit-overflow-scrolling: touch; }
+  .sidebar-actions button { flex: 0 0 auto; min-height: 42px; border-radius: 999px; white-space: nowrap; scroll-snap-align: start; }
+  .sidebar-actions button small { margin-left: 6px; }
+  .app-sidebar > .ghost.compact { width: 100%; min-height: 40px; }
+  .app-header { min-height: auto; padding: 20px; gap: 16px; }
+  .app-header h1 { font-size: clamp(2.25rem, 15vw, 3.4rem); }
+  .app-header img { height: 180px; }
   .split, .activity-summary, .activity-editor { grid-template-columns: 1fr; }
   .activity-editor textarea { grid-column: auto; }
-  .sidebar-actions { grid-template-columns: 1fr; }
   .itinerary-toolbar { flex-direction: column; }
+  .itinerary-toolbar div:last-child { flex-wrap: wrap; width: 100%; }
+  .itinerary-toolbar div:last-child button, .itinerary-toolbar div:last-child a, .activity-quick-actions a, .activity-quick-actions button { flex: 1 1 120px; }
+  .activity-quick-actions { justify-content: stretch; }
+  .share-item { grid-template-columns: 1fr; }
+  .share-item a { grid-row: auto; }
 }
 @media print {
   .app-sidebar, .control-card, .marketing-nav, .hero-actions, .toast { display: none !important; }
