@@ -57,6 +57,14 @@ export function savedIdeaFromRecommendation(rec: DashboardRecommendation, destin
   }
 }
 
+export function sortSavedIdeas(ideas: SavedIdea[]): SavedIdea[] {
+  return [...ideas].sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt))
+}
+
+export function removeSavedIdea(ideas: SavedIdea[], id: string): SavedIdea[] {
+  return ideas.filter((idea) => idea.id !== id)
+}
+
 export function encodeTripForShare(trip: SavedTrip): string {
   const text = JSON.stringify(trip)
   const encoded = btoa(unescape(encodeURIComponent(text)))

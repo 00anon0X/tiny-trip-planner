@@ -4,8 +4,10 @@ import {
   checklistItems,
   decodeTripFromShare,
   encodeTripForShare,
+  removeSavedIdea,
   savedIdeaFromRecommendation,
   sharePrintBrief,
+  sortSavedIdeas,
   sortTripsForDashboard,
   tripQualityWarnings,
 } from './sprint'
@@ -30,6 +32,15 @@ describe('next sprint product helpers', () => {
     expect(idea.title).toBe(rec.title)
     expect(idea.destination).toBe(sampleTrip.destination)
     expect(idea.status).toBe('saved')
+  })
+
+  it('sorts and removes saved-for-later ideas', () => {
+    const rec = getDashboardRecommendations(sampleTrip, emptyLogistics)[0]
+    const older = { ...savedIdeaFromRecommendation(rec, sampleTrip.destination), id: 'older', createdAt: '2026-01-01T00:00:00.000Z' }
+    const newer = { ...savedIdeaFromRecommendation(rec, sampleTrip.destination), id: 'newer', createdAt: '2026-01-02T00:00:00.000Z' }
+
+    expect(sortSavedIdeas([older, newer]).map((idea) => idea.id)).toEqual(['newer', 'older'])
+    expect(removeSavedIdea([older, newer], 'older')).toEqual([newer])
   })
 
   it('encodes and decodes trips for share URLs', () => {

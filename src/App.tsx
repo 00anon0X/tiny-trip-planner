@@ -38,9 +38,11 @@ import {
   checklistItems,
   decodeTripFromShare,
   encodeTripForShare,
+  removeSavedIdea,
   savedIdeaFromRecommendation,
   sharePrintBrief,
   shareUrl,
+  sortSavedIdeas,
   sortTripsForDashboard,
   tripQualityWarnings,
   type SavedIdea,
@@ -174,6 +176,7 @@ function DashboardPage({ go }: { go: (view: View) => void }) {
   const trends = useMemo(() => getTravelerTrends(form), [form])
   const shareSummary = useMemo(() => buildShareSummary(currentTrip), [currentTrip])
   const tripCards = useMemo(() => sortTripsForDashboard(savedTrips), [savedTrips])
+  const savedIdeaCards = useMemo(() => sortSavedIdeas(savedIdeas), [savedIdeas])
   const checklist = useMemo(() => checklistItems(form, logistics, plan, Boolean(activeSavedTrip)).map((item) => ({ ...item, done: item.done || checklistDone.includes(item.id) })), [activeSavedTrip, checklistDone, form, logistics, plan])
   const budget = useMemo(() => budgetSnapshot(form, plan), [form, plan])
   const qualityWarnings = useMemo(() => tripQualityWarnings(form, logistics, plan), [form, logistics, plan])
@@ -220,8 +223,16 @@ function DashboardPage({ go }: { go: (view: View) => void }) {
   }
   function addSavedIdea(idea: SavedIdea) {
     setPlan((current) => current.map((day, index) => index === 0 ? { ...day, activities: [...day.activities, { id: `${day.id}-${idea.id}-${Date.now()}`, slot: idea.slot, title: idea.title, note: idea.reason, cost: idea.cost, location: idea.title }] } : day))
-    setSavedIdeas((current) => current.filter((item) => item.id !== idea.id))
+    setSavedIdeas((current) => removeSavedIdea(current, idea.id))
     notify('Idea added')
+  }
+  function dismissSavedIdea(id: string) {
+    setSavedIdeas((current) => removeSavedIdea(current, id))
+    notify('Removed saved idea')
+  }
+  function clearSavedIdeas() {
+    setSavedIdeas([])
+    notify('Saved ideas cleared')
   }
   function addRecommendation(rec: DashboardRecommendation) {
     setPlan((current) => current.map((day, index) => index === 0 ? { ...day, activities: [...day.activities, { id: `${day.id}-${rec.id}-${Date.now()}`, slot: rec.slot, title: rec.title, note: rec.reason, cost: rec.cost, location: rec.title }] } : day))
@@ -303,7 +314,7 @@ function DashboardPage({ go }: { go: (view: View) => void }) {
               <button className="primary" onClick={generate} disabled={Boolean(error)}>Generate plan</button>
               <button className="ghost" onClick={saveTrip}>Save trip</button>
             </div>}
-            {panel === 'explore' && <div className="panel-stack"><h2>Explore</h2><section className="mini-card"><h3>Recommendations</h3>{recommendations.map((rec) => <article className="recommend-row" key={rec.id}><div><b>{rec.title}</b><span>{rec.reason}</span></div><div><button onClick={() => addRecommendation(rec)}>Add</button><button onClick={() => saveIdea(rec)}>Save</button></div></article>)}</section>{savedIdeas.length > 0 && <section className="mini-card"><h3>Saved for later</h3>{savedIdeas.map((idea) => <article className="recommend-row" key={idea.id}><div><b>{idea.title}</b><span>{idea.tag} · {idea.destination}</span></div><button onClick={() => addSavedIdea(idea)}>Add</button></article>)}</section>}<section className="mini-card"><h3>Highest-rated itineraries</h3>{featuredItineraries.map((template) => <article className="template-row" key={template.id}><div><b>{template.title}</b><span>{template.days} days · ★ {template.rating} · {template.saves} saves</span><p>{template.angle}</p></div><button onClick={() => cloneTemplate(template)}>Clone</button></article>)}</section></div>}
+            {panel === 'explore' && <div className="panel-stack"><h2>Explore</h2><section className="mini-card"><h3>Recommendations</h3>{recommendations.map((rec) => <article className="recommend-row" key={rec.id}><div><b>{rec.title}</b><span>{rec.reason}</span></div><div><button onClick={() => addRecommendation(rec)}>Add</button><button onClick={() => saveIdea(rec)}>Save</button></div></article>)}</section><section className="mini-card"><div className="mini-card-heading"><h3>Saved for later</h3>{savedIdeaCards.length > 0 && <button className="text-button" onClick={clearSavedIdeas}>Clear all</button>}</div>{savedIdeaCards.length === 0 ? <p className="muted">No saved ideas yet. Save a recommendation to compare it before adding it to the plan.</p> : savedIdeaCards.map((idea) => <article className="recommend-row" key={idea.id}><div><b>{idea.title}</b><span>{idea.tag} · {idea.destination}</span><p>{idea.reason}</p></div><div><button onClick={() => addSavedIdea(idea)}>Add</button><button onClick={() => dismissSavedIdea(idea.id)}>Remove</button></div></article>)}</section><section className="mini-card"><h3>Highest-rated itineraries</h3>{featuredItineraries.map((template) => <article className="template-row" key={template.id}><div><b>{template.title}</b><span>{template.days} days · ★ {template.rating} · {template.saves} saves</span><p>{template.angle}</p></div><button onClick={() => cloneTemplate(template)}>Clone</button></article>)}</section></div>}
             {panel === 'saved' && <div className="panel-stack"><h2>Saved trips</h2>{savedTrips.length === 0 ? <p className="muted">No saved trips yet.</p> : savedTrips.map((trip) => <article className="saved-row trip-card" key={trip.id}><strong>{trip.name}</strong><span>{trip.form.destination} · {dayCount(trip.form.startDate, trip.form.endDate)} days</span><div><button onClick={() => loadTrip(trip)}>Open</button><button onClick={() => setSavedTrips((current) => upsertSavedTrip(current, duplicateTrip(trip)))}>Duplicate</button><button onClick={() => setSavedTrips((current) => current.filter((item) => item.id !== trip.id))}>Delete</button></div></article>)}</div>}
             {panel === 'share' && <div className="panel-stack"><h2>Share itinerary</h2><p className="muted">Friend-friendly summary. No public backend yet, so this copies the plan text.</p><textarea readOnly value={shareSummary} rows={10} /><label>Share link<input readOnly value={currentShareUrl} /></label><button className="primary" onClick={() => navigator.clipboard.writeText(currentShareUrl).then(() => notify('Share link copied'))}>Copy share link</button><button className="ghost" onClick={() => navigator.clipboard.writeText(shareSummary).then(() => notify('Share summary copied'))}>Copy share summary</button><button className="ghost" onClick={() => window.open(`/share#trip=${encodeTripForShare(currentTrip)}`, '_blank')}>Open share view</button><button className="ghost" onClick={() => window.print()}>Print share view</button></div>}
             {panel === 'export' && <div className="panel-stack"><h2>Export</h2><button className="ghost" onClick={() => navigator.clipboard.writeText(tripToMarkdown(currentTrip)).then(() => notify('Copied'))}>Copy Markdown</button><button className="ghost" onClick={() => exportFile('md')}>Download Markdown</button><button className="ghost" onClick={() => exportFile('json')}>Download JSON backup</button><button className="ghost" onClick={() => exportFile('ics')}>Download calendar</button><button className="ghost" onClick={() => window.print()}>Print</button><label className="file-button">Import JSON<input hidden type="file" accept="application/json,.json" onChange={(event) => { const file = event.target.files?.[0]; if (file) void importTrip(file) }} /></label></div>}
