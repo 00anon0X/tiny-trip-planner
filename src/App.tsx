@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import './App.css'
 import {
   applyPreset,
@@ -8,21 +8,18 @@ import {
   emptyLogistics,
   formatDate,
   generatePlan,
-  googleDirectionsUrl,
   googleIdeasUrl,
   googleMapsSearchUrl,
   interests,
   makeSavedTrip,
   parseImportedTrip,
   photoForDestination,
-  photosForDestination,
   presets,
   safeReadJson,
   sampleTrip,
   slotOrder,
   tripToIcs,
   tripToJson,
-  travelPhotos,
   tripToMarkdown,
   upsertSavedTrip,
   type Activity,
@@ -35,6 +32,7 @@ import {
   type TripForm,
   type TripLogistics,
 } from './lib/trip'
+import { pathFor, resolveView, type View } from './lib/routes'
 
 const KEYS = {
   form: 'tinytrip:form',
@@ -43,8 +41,6 @@ const KEYS = {
   saved: 'tinytrip:savedTrips',
   active: 'tinytrip:activeTripId',
 }
-
-type Toast = { message: string; action?: { label: string; run: () => void } }
 
 function downloadText(filename: string, content: string, type: string) {
   const blob = new Blob([content], { type })
@@ -56,35 +52,82 @@ function downloadText(filename: string, content: string, type: string) {
   URL.revokeObjectURL(url)
 }
 
-function safeSlug(value: string) {
+function slug(value: string) {
   return value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'tiny-trip'
 }
 
-function App() {
+function useRoute() {
+  const [view, setView] = useState<View>(() => resolveView(window.location.pathname))
+  useEffect(() => {
+    const onPop = () => setView(resolveView(window.location.pathname))
+    window.addEventListener('popstate', onPop)
+    return () => window.removeEventListener('popstate', onPop)
+  }, [])
+  function go(next: View) {
+    window.history.pushState({}, '', pathFor(next))
+    setView(next)
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
+  return { view, go }
+}
+
+function MarketingPage({ go }: { go: (view: View) => void }) {
+  return (
+    <main className="marketing-page">
+      <nav className="marketing-nav">
+        <a className="brand" href="/" onClick={(event) => { event.preventDefault(); go('marketing') }}><span>✈</span>Tiny Trip</a>
+        <button className="ghost compact" onClick={() => go('login')}>Open app</button>
+      </nav>
+      <section className="landing-hero">
+        <div className="landing-copy">
+          <p className="eyebrow">Trip planning without spreadsheet chaos</p>
+          <h1>Plan a small trip without making it a big project.</h1>
+          <p>Tiny Trip keeps short getaways focused: a clean day plan, local backups, saved trips, and simple exports. No account required for this demo.</p>
+          <div className="hero-actions"><button className="primary" onClick={() => go('login')}>Try the planner</button><a className="ghost" href="#features">See features</a></div>
+        </div>
+        <div className="landing-card">
+          <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/b/b0/Alfama%2C_Lisbon_%28DSC03367%29.jpg/1280px-Alfama%2C_Lisbon_%28DSC03367%29.jpg" alt="Lisbon street view" />
+          <div><strong>Lisbon weekend</strong><span>3 days · food · culture · relaxed</span></div>
+        </div>
+      </section>
+      <section className="feature-strip" id="features">
+        <article><b>01</b><h2>Make the plan</h2><p>Pick dates, pace, budget, and interests. Get an editable itinerary.</p></article>
+        <article><b>02</b><h2>Keep it practical</h2><p>Add home base, arrival notes, rainy-day backups, and maps links.</p></article>
+        <article><b>03</b><h2>Take it with you</h2><p>Save locally, export Markdown, JSON backup, calendar file, or print.</p></article>
+      </section>
+    </main>
+  )
+}
+
+function LoginPage({ go }: { go: (view: View) => void }) {
+  return (
+    <main className="login-page">
+      <button className="brand link-button" onClick={() => go('marketing')}><span>✈</span>Tiny Trip</button>
+      <section className="login-card">
+        <p className="eyebrow">Demo login</p>
+        <h1>Open your trip dashboard.</h1>
+        <p>No username or password yet. This is only a placeholder gate so the landing page and actual product UX stay separate.</p>
+        <button className="primary" onClick={() => go('dashboard')}>Continue to dashboard</button>
+        <button className="ghost" onClick={() => go('marketing')}>Back to landing page</button>
+      </section>
+    </main>
+  )
+}
+
+function DashboardPage({ go }: { go: (view: View) => void }) {
   const [form, setForm] = useState<TripForm>(() => safeReadJson(localStorage.getItem(KEYS.form), sampleTrip))
   const [logistics, setLogistics] = useState<TripLogistics>(() => safeReadJson(localStorage.getItem(KEYS.logistics), emptyLogistics))
   const [plan, setPlan] = useState<DayPlan[]>(() => safeReadJson(localStorage.getItem(KEYS.plan), generatePlan(sampleTrip)))
   const [savedTrips, setSavedTrips] = useState<SavedTrip[]>(() => safeReadJson(localStorage.getItem(KEYS.saved), []))
   const [activeTripId, setActiveTripId] = useState<string>(() => localStorage.getItem(KEYS.active) ?? '')
-  const [tripsOpen, setTripsOpen] = useState(false)
-  const [exportOpen, setExportOpen] = useState(false)
-  const [collapsedDays, setCollapsedDays] = useState<Record<string, boolean>>({})
-  const [toast, setToast] = useState<Toast | null>(null)
-  const [lastDeleted, setLastDeleted] = useState<{ dayId: string; activity: Activity; index: number } | null>(null)
-  const importRef = useRef<HTMLInputElement>(null)
+  const [panel, setPanel] = useState<'setup' | 'saved' | 'export'>('setup')
+  const [toast, setToast] = useState('')
 
   const days = useMemo(() => dayCount(form.startDate, form.endDate), [form.startDate, form.endDate])
-  const activePhoto = photoForDestination(form.destination)
-  const dayPhotos = photosForDestination(form.destination)
   const currentTrip = useMemo(() => makeSavedTrip(form, logistics, plan, savedTrips.find((trip) => trip.id === activeTripId)), [activeTripId, form, logistics, plan, savedTrips])
   const activeSavedTrip = savedTrips.find((trip) => trip.id === activeTripId)
-  const error = !form.destination.trim()
-    ? 'Add a destination to generate a useful plan.'
-    : days < 1
-      ? 'End date must be after the start date.'
-      : days > 14
-        ? 'Tiny Trip Planner supports trips up to 14 days.'
-        : ''
+  const heroPhoto = photoForDestination(form.destination)
+  const error = !form.destination.trim() ? 'Destination required.' : days < 1 ? 'End date must be after start date.' : days > 14 ? 'Max 14 days.' : ''
 
   useEffect(() => {
     localStorage.setItem(KEYS.form, JSON.stringify(form))
@@ -96,255 +139,98 @@ function App() {
 
   useEffect(() => {
     if (!toast) return
-    const timer = window.setTimeout(() => setToast(null), toast.action ? 5200 : 2500)
+    const timer = window.setTimeout(() => setToast(''), 2200)
     return () => window.clearTimeout(timer)
   }, [toast])
 
-  function notify(message: string, action?: Toast['action']) {
-    setToast({ message, action })
-  }
-
-  function update<K extends keyof TripForm>(key: K, value: TripForm[K]) {
-    setForm((current) => ({ ...current, [key]: value }))
-  }
-
-  function updateLogistics<K extends keyof TripLogistics>(key: K, value: TripLogistics[K]) {
-    setLogistics((current) => ({ ...current, [key]: value }))
-  }
-
-  function toggleInterest(interest: string) {
-    update('interests', form.interests.includes(interest) ? form.interests.filter((item) => item !== interest) : [...form.interests, interest])
-  }
-
-  function generate() {
-    if (error) return
-    setPlan(generatePlan(form))
-    notify('Itinerary generated.')
-    document.querySelector('#itinerary')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-  }
-
+  function update<K extends keyof TripForm>(key: K, value: TripForm[K]) { setForm((current) => ({ ...current, [key]: value })) }
+  function updateLogistics<K extends keyof TripLogistics>(key: K, value: TripLogistics[K]) { setLogistics((current) => ({ ...current, [key]: value })) }
+  function notify(message: string) { setToast(message) }
+  function generate() { if (!error) { setPlan(generatePlan(form)); notify('Plan refreshed') } }
   function saveTrip() {
     const trip = makeSavedTrip(form, logistics, plan, activeSavedTrip)
     setSavedTrips((current) => upsertSavedTrip(current, trip))
     setActiveTripId(trip.id)
-    notify('Trip saved locally on this device.')
+    notify('Trip saved')
   }
-
-  function loadTrip(trip: SavedTrip) {
-    setForm(trip.form)
-    setLogistics(trip.logistics)
-    setPlan(trip.plan)
-    setActiveTripId(trip.id)
-    setTripsOpen(false)
-    notify(`Loaded ${trip.name}.`)
-  }
-
-  function renameTrip(id: string) {
-    const next = window.prompt('Rename trip', savedTrips.find((trip) => trip.id === id)?.name ?? '')
-    if (!next) return
-    setSavedTrips((current) => current.map((trip) => trip.id === id ? { ...trip, name: next, updatedAt: new Date().toISOString() } : trip))
-    notify('Trip renamed.')
-  }
-
-  function deleteTrip(id: string) {
-    if (!window.confirm('Delete this saved trip from this device?')) return
-    setSavedTrips((current) => current.filter((trip) => trip.id !== id))
-    if (activeTripId === id) setActiveTripId('')
-    notify('Trip deleted.')
-  }
-
-  function duplicateSavedTrip(trip: SavedTrip) {
-    const copy = duplicateTrip(trip)
-    setSavedTrips((current) => upsertSavedTrip(current, copy))
-    notify('Trip duplicated.')
-  }
-
+  function loadTrip(trip: SavedTrip) { setForm(trip.form); setLogistics(trip.logistics); setPlan(trip.plan); setActiveTripId(trip.id); setPanel('setup'); notify('Trip loaded') }
   function updateActivity(dayId: string, activityId: string, patch: Partial<Activity>) {
     setPlan((current) => current.map((day) => day.id === dayId ? { ...day, activities: day.activities.map((activity) => activity.id === activityId ? { ...activity, ...patch } : activity) } : day))
   }
-
-  function moveActivity(dayId: string, activityId: string, direction: -1 | 1) {
-    setPlan((current) => current.map((day) => {
-      if (day.id !== dayId) return day
-      const index = day.activities.findIndex((activity) => activity.id === activityId)
-      const target = index + direction
-      if (target < 0 || target >= day.activities.length) return day
-      const activities = [...day.activities]
-      const [item] = activities.splice(index, 1)
-      activities.splice(target, 0, item)
-      return { ...day, activities }
-    }))
-    notify('Activity moved.')
+  function addActivity(dayId: string) {
+    setPlan((current) => current.map((day) => day.id === dayId ? { ...day, activities: [...day.activities, { id: `${day.id}-${Date.now()}`, slot: 'Flex', title: 'New item', note: 'Add detail here.', cost: '$', location: '' }] } : day))
   }
-
-  function addActivity(dayId: string, template: Partial<Activity> = {}) {
-    setPlan((current) => current.map((day) => day.id === dayId ? {
-      ...day,
-      activities: [...day.activities, { id: `${day.id}-${Date.now()}`, slot: template.slot ?? 'Flex', title: template.title ?? 'New plan item', note: template.note ?? 'Add timing, booking, or backup notes here.', cost: template.cost ?? '$$', location: template.location ?? '', backup: template.backup ?? 'nearby café or indoor backup' }],
-    } : day))
-    setCollapsedDays((current) => ({ ...current, [dayId]: false }))
-    notify('Activity added.')
+  function removeActivity(dayId: string, activityId: string) {
+    setPlan((current) => current.map((day) => day.id === dayId ? { ...day, activities: day.activities.filter((activity) => activity.id !== activityId) } : day))
   }
-
-  function deleteActivity(dayId: string, activityId: string) {
-    const day = plan.find((item) => item.id === dayId)
-    const index = day?.activities.findIndex((activity) => activity.id === activityId) ?? -1
-    const activity = day?.activities[index]
-    if (!activity) return
-    setLastDeleted({ dayId, activity, index })
-    setPlan((current) => current.map((item) => item.id === dayId ? { ...item, activities: item.activities.filter((candidate) => candidate.id !== activityId) } : item))
-    notify('Activity deleted.', { label: 'Undo', run: undoDelete })
-  }
-
-  function undoDelete() {
-    if (!lastDeleted) return
-    setPlan((current) => current.map((day) => {
-      if (day.id !== lastDeleted.dayId) return day
-      const activities = [...day.activities]
-      activities.splice(lastDeleted.index, 0, lastDeleted.activity)
-      return { ...day, activities }
-    }))
-    setLastDeleted(null)
-    setToast(null)
-  }
-
-  async function copyPlan() {
-    await navigator.clipboard.writeText(tripToMarkdown(currentTrip))
-    notify('Itinerary copied.')
-  }
-
   function exportFile(kind: 'md' | 'json' | 'ics') {
-    const name = safeSlug(form.destination)
-    if (kind === 'md') downloadText(`${name}-plan.md`, tripToMarkdown(currentTrip), 'text/markdown')
-    if (kind === 'json') downloadText(`${name}-backup.json`, tripToJson(currentTrip), 'application/json')
-    if (kind === 'ics') downloadText(`${name}-calendar.ics`, tripToIcs(currentTrip), 'text/calendar')
-    setExportOpen(false)
-    notify('Export started.')
+    const name = slug(form.destination)
+    if (kind === 'md') downloadText(`${name}.md`, tripToMarkdown(currentTrip), 'text/markdown')
+    if (kind === 'json') downloadText(`${name}.json`, tripToJson(currentTrip), 'application/json')
+    if (kind === 'ics') downloadText(`${name}.ics`, tripToIcs(currentTrip), 'text/calendar')
+    notify('Export started')
   }
-
   async function importTrip(file: File) {
-    const text = await file.text()
-    const trip = parseImportedTrip(text)
-    if (!trip) {
-      notify('Import failed: invalid trip backup.')
-      return
-    }
+    const trip = parseImportedTrip(await file.text())
+    if (!trip) { notify('Invalid backup'); return }
     const imported = makeSavedTrip(trip.form, trip.logistics, trip.plan, { name: `${trip.name} imported` })
     setSavedTrips((current) => upsertSavedTrip(current, imported))
     loadTrip(imported)
-    notify('Trip backup imported.')
   }
 
-  const activityTemplates: Partial<Activity>[] = [
-    { title: 'Meal reservation', note: 'Add restaurant, booking time, and confirmation notes.', slot: 'Evening', cost: '$$' },
-    { title: 'Transit buffer', note: 'Leave margin for ticketing, transfers, and walking.', slot: 'Flex', cost: '$' },
-    { title: 'Rainy-day backup', note: 'Indoor fallback if weather or energy turns.', slot: 'Flex', cost: '$' },
-    { title: 'Free time', note: 'Keep this unscheduled for discoveries or rest.', slot: 'Flex', cost: 'Free' },
-  ]
-
   return (
-    <main className="app-shell">
-      <nav className="topbar" aria-label="Primary navigation">
-        <a className="brand" href="#top" aria-label="Tiny Trip Planner home"><span>✈</span>Tiny Trip</a>
-        <div className="nav-links">
-          <a href="#planner">Plan</a><a href="#trips">Trips</a><a href="#logistics">Logistics</a><a href="#itinerary">Itinerary</a><a href="#packing">Export</a>
+    <main className="dashboard-page">
+      <aside className="app-sidebar">
+        <button className="brand link-button" onClick={() => go('marketing')}><span>✈</span>Tiny Trip</button>
+        <div className="sidebar-actions">
+          <button className={panel === 'setup' ? 'selected' : ''} onClick={() => setPanel('setup')}>Plan setup</button>
+          <button className={panel === 'saved' ? 'selected' : ''} onClick={() => setPanel('saved')}>Saved trips <small>{savedTrips.length}</small></button>
+          <button className={panel === 'export' ? 'selected' : ''} onClick={() => setPanel('export')}>Export</button>
         </div>
-        <button type="button" className="ghost" onClick={() => setTripsOpen(true)}>Trips ({savedTrips.length})</button>
-      </nav>
+        <button className="ghost compact" onClick={() => go('login')}>Log out demo</button>
+      </aside>
 
-      <section className="hero" id="top">
-        <div>
-          <p className="eyebrow">Browser-only tiny trip planner</p>
-          <h1>A pocket-sized travel app for tiny trips.</h1>
-          <p className="hero-copy">Save multiple trips, start from presets, add your home base, export backups, and keep an editable day-by-day plan that works entirely in your browser.</p>
-          <div className="hero-actions">
-            <a className="primary-link" href="#planner">Plan my trip</a>
-            <button type="button" className="ghost" onClick={() => { setForm(sampleTrip); setPlan(generatePlan(sampleTrip)); setLogistics(emptyLogistics); notify('Lisbon sample loaded.') }}>Load Lisbon sample</button>
-            <button type="button" className="ghost" onClick={saveTrip}>Save locally</button>
-          </div>
-          <div className="status-row"><span>{activeSavedTrip ? `Editing ${activeSavedTrip.name}` : 'Draft trip'}</span><span>Saved on this device · export JSON to move devices</span></div>
-        </div>
-        <aside className="hero-card photo-card" aria-label="Trip preview">
-          <img src={activePhoto.url} alt={`${activePhoto.city} travel inspiration`} />
-          <div className="photo-overlay"><span className="pin">📍 {activePhoto.label}</span><strong>{form.destination || 'Your destination'}</strong><p>{Math.max(days, 0)} day{days === 1 ? '' : 's'} · {form.travelers} traveler{form.travelers === 1 ? '' : 's'} · {form.pace}</p></div>
-        </aside>
-      </section>
+      <section className="dashboard-main">
+        <header className="app-header">
+          <div><p className="eyebrow">Dashboard</p><h1>{form.destination || 'New trip'}</h1><p>{Math.max(days, 0)} day{days === 1 ? '' : 's'} · {form.travelers} traveler{form.travelers === 1 ? '' : 's'} · {form.pace}</p></div>
+          <img src={heroPhoto.url} alt={`${heroPhoto.city} inspiration`} />
+        </header>
 
-      <section className="photo-strip" aria-label="Travel inspiration photos">
-        {travelPhotos.map((photo) => <article key={photo.city}><img src={photo.url} alt={`${photo.city} inspiration`} loading="lazy" /><div><span>{photo.city}</span><p>{photo.label}</p></div></article>)}
-      </section>
+        <section className="app-grid">
+          <aside className="control-card">
+            {panel === 'setup' && <div className="panel-stack">
+              <h2>Plan setup</h2>
+              <label>Destination<input value={form.destination} onChange={(event) => update('destination', event.target.value)} /></label>
+              <div className="split"><label>Start<input type="date" value={form.startDate} onChange={(event) => update('startDate', event.target.value)} /></label><label>End<input type="date" value={form.endDate} onChange={(event) => update('endDate', event.target.value)} /></label></div>
+              <div className="split"><label>Travelers<input type="number" min="1" max="12" value={form.travelers} onChange={(event) => update('travelers', Number(event.target.value))} /></label><label>Budget<select value={form.budget} onChange={(event) => update('budget', event.target.value as Budget)}><option>Shoestring</option><option>Comfort</option><option>Treat yourself</option></select></label></div>
+              <label>Preset<select onChange={(event) => event.target.value && setForm((current) => applyPreset(current, event.target.value))} defaultValue=""><option value="">Choose a preset...</option>{presets.map((preset) => <option key={preset.id} value={preset.id}>{preset.icon} {preset.label}</option>)}</select></label>
+              <div className="chips">{(['Relaxed', 'Balanced', 'Packed'] as Pace[]).map((pace) => <button key={pace} className={form.pace === pace ? 'selected' : ''} onClick={() => update('pace', pace)}>{pace}</button>)}</div>
+              <details><summary>Interests</summary><div className="chips">{interests.map((interest) => <button key={interest} className={form.interests.includes(interest) ? 'selected' : ''} onClick={() => update('interests', form.interests.includes(interest) ? form.interests.filter((item) => item !== interest) : [...form.interests, interest])}>{interest}</button>)}</div></details>
+              <details><summary>Logistics</summary><label>Home base<input value={logistics.homeBaseName} onChange={(event) => updateLogistics('homeBaseName', event.target.value)} placeholder="Hotel / apartment" /></label><label>Neighborhood<input value={logistics.homeBaseAddress} onChange={(event) => updateLogistics('homeBaseAddress', event.target.value)} /></label><label>Notes<textarea value={logistics.importantNotes} onChange={(event) => updateLogistics('importantNotes', event.target.value)} rows={3} /></label></details>
+              {error && <p className="error">{error}</p>}
+              <button className="primary" onClick={generate} disabled={Boolean(error)}>Generate plan</button>
+              <button className="ghost" onClick={saveTrip}>Save trip</button>
+            </div>}
+            {panel === 'saved' && <div className="panel-stack"><h2>Saved trips</h2>{savedTrips.length === 0 ? <p className="muted">No saved trips yet.</p> : savedTrips.map((trip) => <article className="saved-row" key={trip.id}><strong>{trip.name}</strong><span>{trip.form.destination} · {dayCount(trip.form.startDate, trip.form.endDate)} days</span><div><button onClick={() => loadTrip(trip)}>Open</button><button onClick={() => setSavedTrips((current) => upsertSavedTrip(current, duplicateTrip(trip)))}>Duplicate</button><button onClick={() => setSavedTrips((current) => current.filter((item) => item.id !== trip.id))}>Delete</button></div></article>)}</div>}
+            {panel === 'export' && <div className="panel-stack"><h2>Export</h2><button className="ghost" onClick={() => navigator.clipboard.writeText(tripToMarkdown(currentTrip)).then(() => notify('Copied'))}>Copy Markdown</button><button className="ghost" onClick={() => exportFile('md')}>Download Markdown</button><button className="ghost" onClick={() => exportFile('json')}>Download JSON backup</button><button className="ghost" onClick={() => exportFile('ics')}>Download calendar</button><button className="ghost" onClick={() => window.print()}>Print</button><label className="file-button">Import JSON<input hidden type="file" accept="application/json,.json" onChange={(event) => { const file = event.target.files?.[0]; if (file) void importTrip(file) }} /></label></div>}
+          </aside>
 
-      <section className="workspace" id="planner">
-        <form className="panel controls" onSubmit={(event) => { event.preventDefault(); generate() }}>
-          <div className="section-heading"><span>01 / Trip inputs</span><h2>Tell it just enough.</h2></div>
-          <div className="preset-grid" aria-label="Trip presets">
-            {presets.map((preset) => <button key={preset.id} type="button" className="preset-card" onClick={() => { setForm((current) => applyPreset(current, preset.id)); notify(`${preset.label} preset applied.`) }}><span>{preset.icon}</span><strong>{preset.label}</strong><small>{preset.description}</small></button>)}
-          </div>
-          <label>Destination<input value={form.destination} onChange={(event) => update('destination', event.target.value)} placeholder="Tokyo, Seoul, Lisbon..." /></label>
-          <div className="two-col"><label>Start date<input type="date" value={form.startDate} onChange={(event) => update('startDate', event.target.value)} /></label><label>End date<input type="date" value={form.endDate} onChange={(event) => update('endDate', event.target.value)} /></label></div>
-          <div className="two-col"><label>Travelers<input type="number" min="1" max="12" value={form.travelers} onChange={(event) => update('travelers', Number(event.target.value))} /></label><label>Budget<select value={form.budget} onChange={(event) => update('budget', event.target.value as Budget)}><option>Shoestring</option><option>Comfort</option><option>Treat yourself</option></select></label></div>
-          <fieldset><legend>Pace</legend><div className="chip-row">{(['Relaxed', 'Balanced', 'Packed'] as Pace[]).map((pace) => <button key={pace} type="button" className={form.pace === pace ? 'chip selected' : 'chip'} onClick={() => update('pace', pace)}>{pace}</button>)}</div></fieldset>
-          <fieldset><legend>Interests</legend><div className="chip-row interests">{interests.map((interest) => <button key={interest} type="button" className={form.interests.includes(interest) ? 'chip selected' : 'chip'} onClick={() => toggleInterest(interest)}>{interest}</button>)}</div></fieldset>
-          {error && <p className="error" role="alert">{error}</p>}
-          <button className="primary" disabled={Boolean(error)} type="submit">Generate itinerary</button>
-        </form>
-
-        <section className="main-column">
-          <section className="panel logistics" id="logistics">
-            <div className="section-heading"><span>02 / Logistics</span><h2>Home base, arrivals, backups.</h2></div>
-            <div className="two-col"><label>Home base / hotel<input value={logistics.homeBaseName} onChange={(event) => updateLogistics('homeBaseName', event.target.value)} placeholder="Casa Alfama" /></label><label>Address / neighborhood<input value={logistics.homeBaseAddress} onChange={(event) => updateLogistics('homeBaseAddress', event.target.value)} placeholder="Alfama, Lisbon" /></label></div>
-            <div className="two-col"><label>Check-in<input value={logistics.checkInTime} onChange={(event) => updateLogistics('checkInTime', event.target.value)} /></label><label>Check-out<input value={logistics.checkOutTime} onChange={(event) => updateLogistics('checkOutTime', event.target.value)} /></label></div>
-            <div className="two-col"><label>Arrival plan<input value={logistics.arrivalMode} onChange={(event) => updateLogistics('arrivalMode', event.target.value)} placeholder="Metro from airport" /></label><label>Departure plan<input value={logistics.departureMode} onChange={(event) => updateLogistics('departureMode', event.target.value)} placeholder="Taxi buffer" /></label></div>
-            <label>Important notes<textarea rows={2} value={logistics.importantNotes} onChange={(event) => updateLogistics('importantNotes', event.target.value)} placeholder="Tickets, allergies, luggage, must-book items..." /></label>
-            <div className="quick-links"><a href={googleDirectionsUrl(logistics.homeBaseAddress, form.destination)} target="_blank">Map route</a><a href={googleMapsSearchUrl(form.destination, 'food near ' + (logistics.homeBaseAddress || form.destination))} target="_blank">Food nearby</a><a href={googleIdeasUrl(form)} target="_blank">Search ideas</a></div>
-          </section>
-
-          <section className="panel output" id="itinerary">
-            <div className="output-toolbar sticky-tools">
-              <div className="section-heading"><span>03 / Editable itinerary</span><h2>{form.destination || 'Tiny'} in {Math.max(days, 0)} day{days === 1 ? '' : 's'}</h2></div>
-              <div className="toolbar-actions"><button type="button" className="ghost" onClick={saveTrip}>{activeSavedTrip ? 'Update saved' : 'Save trip'}</button><button type="button" className="ghost" onClick={copyPlan}>Copy</button><button type="button" className="ghost" onClick={() => setExportOpen((open) => !open)}>Export</button></div>
-              {exportOpen && <div className="export-menu"><button onClick={() => exportFile('md')}>Markdown</button><button onClick={() => exportFile('json')}>JSON backup</button><button onClick={() => exportFile('ics')}>Calendar .ics</button><button onClick={() => window.print()}>Print</button><button onClick={() => importRef.current?.click()}>Import JSON</button><input ref={importRef} hidden type="file" accept="application/json,.json" onChange={(event) => { const file = event.target.files?.[0]; if (file) void importTrip(file); event.currentTarget.value = '' }} /></div>}
-            </div>
-
-            <div className="day-tabs">{plan.map((day, index) => <a key={day.id} href={`#${day.id}`}>Day {index + 1}</a>)}</div>
-            <div className="day-stack">
-              {plan.map((day, dayIndex) => {
-                const collapsed = collapsedDays[day.id]
-                return <article className="day-card" key={day.id} id={day.id}>
-                  <div className="day-photo" style={{ backgroundImage: `url(${dayPhotos[dayIndex % dayPhotos.length]})` }} />
-                  <header><span className="day-number">Day {dayIndex + 1}</span><button className="day-toggle" type="button" onClick={() => setCollapsedDays((current) => ({ ...current, [day.id]: !current[day.id] }))}><strong>{formatDate(day.date)} · {day.title}</strong><small>{day.activities.length} stops · {day.estimatedSpend} · {collapsed ? 'expand' : 'collapse'}</small></button></header>
-                  {!collapsed && <>
-                    <div className="day-intel"><span>Don’t miss: {day.dontMiss}</span><span>Transit: {day.transitNote}</span><span>Rainy backup: {day.rainyDay}</span></div>
-                    <div className="timeline">
-                      {day.activities.length === 0 ? <p className="empty">No activities yet. Add one below.</p> : day.activities.map((activity, activityIndex) => <div className="activity" key={activity.id}>
-                        <select aria-label="Activity time slot" value={activity.slot} onChange={(event) => updateActivity(day.id, activity.id, { slot: event.target.value as Slot })}>{slotOrder.map((slot) => <option key={slot}>{slot}</option>)}</select>
-                        <input aria-label="Activity title" value={activity.title} onChange={(event) => updateActivity(day.id, activity.id, { title: event.target.value })} />
-                        <textarea aria-label="Activity note" rows={2} value={activity.note} onChange={(event) => updateActivity(day.id, activity.id, { note: event.target.value })} />
-                        <div className="activity-meta"><input aria-label="Activity location" value={activity.location ?? ''} onChange={(event) => updateActivity(day.id, activity.id, { location: event.target.value })} placeholder="Location/search hint" /><select aria-label="Activity cost" value={activity.cost} onChange={(event) => updateActivity(day.id, activity.id, { cost: event.target.value as Cost })}>{costOptions.map((cost) => <option key={cost}>{cost}</option>)}</select></div>
-                        <div className="activity-actions"><a href={googleMapsSearchUrl(form.destination, activity.location || activity.title)} target="_blank">Maps</a><button type="button" onClick={() => moveActivity(day.id, activity.id, -1)} disabled={activityIndex === 0}>↑</button><button type="button" onClick={() => moveActivity(day.id, activity.id, 1)} disabled={activityIndex === day.activities.length - 1}>↓</button><button type="button" className="danger" onClick={() => deleteActivity(day.id, activity.id)}>Delete</button></div>
-                      </div>)}
-                    </div>
-                    <div className="template-row">{activityTemplates.map((template) => <button key={template.title} type="button" onClick={() => addActivity(day.id, template)}>+ {template.title}</button>)}</div>
-                  </>}
-                </article>
-              })}
-            </div>
+          <section className="itinerary-card">
+            <div className="itinerary-toolbar"><div><h2>Itinerary</h2><p>{activeSavedTrip ? `Editing ${activeSavedTrip.name}` : 'Unsaved draft'}</p></div><div><button className="ghost compact" onClick={saveTrip}>Save</button><a href={googleMapsSearchUrl(form.destination)} target="_blank">View map</a><a href={googleIdeasUrl(form)} target="_blank">Get ideas</a></div></div>
+            <div className="day-list">{plan.map((day, dayIndex) => <article className="simple-day" key={day.id}><header><span>Day {dayIndex + 1}</span><div><h3>{formatDate(day.date)} · {day.title}</h3><p>{day.dontMiss} · {day.estimatedSpend}</p></div></header><div className="intel"><b>Backup:</b> {day.rainyDay}</div>{day.activities.map((activity) => <div className="simple-activity" key={activity.id}><div className="activity-summary"><span>{activity.slot}</span><div><strong>{activity.title}</strong><p>{activity.note}</p></div><em>{activity.cost}</em></div><div className="activity-quick-actions"><a href={googleMapsSearchUrl(form.destination, activity.location || activity.title)} target="_blank">Map</a><button onClick={() => removeActivity(day.id, activity.id)}>Remove</button></div><details><summary>Edit details</summary><div className="activity-editor"><select value={activity.slot} onChange={(event) => updateActivity(day.id, activity.id, { slot: event.target.value as Slot })}>{slotOrder.map((slot) => <option key={slot}>{slot}</option>)}</select><input value={activity.title} onChange={(event) => updateActivity(day.id, activity.id, { title: event.target.value })} /><select value={activity.cost} onChange={(event) => updateActivity(day.id, activity.id, { cost: event.target.value as Cost })}>{costOptions.map((cost) => <option key={cost}>{cost}</option>)}</select><textarea value={activity.note} onChange={(event) => updateActivity(day.id, activity.id, { note: event.target.value })} rows={2} /></div></details></div>)}<button className="add-line" onClick={() => addActivity(day.id)}>+ Add item</button></article>)}</div>
           </section>
         </section>
       </section>
-
-      <section className="extras" id="packing">
-        <article className="image-extra packing-extra"><span>🎒</span><h3>Tiny packing list</h3><ul><li>Passport / ID + bookings</li><li>Comfortable shoes</li><li>Portable charger</li><li>Weather layer</li></ul></article>
-        <article className="image-extra budget-extra"><span>💸</span><h3>Budget guardrail</h3><p>{form.budget === 'Shoestring' ? 'Prioritize markets, transit, and free viewpoints.' : form.budget === 'Comfort' ? 'Mix paid anchors with low-cost wandering blocks.' : 'Book one memorable meal or guided activity early.'}</p></article>
-        <article className="image-extra map-extra"><span>🗺️</span><h3>Useful links</h3><a href={googleMapsSearchUrl(form.destination)} target="_blank">Open map search</a><a href={googleIdeasUrl(form)} target="_blank">Search ideas</a></article>
-      </section>
-
-      {tripsOpen && <div className="drawer-backdrop" onClick={() => setTripsOpen(false)}><aside className="trips-drawer" id="trips" onClick={(event) => event.stopPropagation()}><header><div><p className="eyebrow">Saved locally</p><h2>My trips</h2></div><button className="ghost" onClick={() => setTripsOpen(false)}>Close</button></header><button className="primary" onClick={saveTrip}>Save current trip</button><p className="drawer-note">Trips are stored only in this browser. Export JSON backups to move devices.</p>{savedTrips.length === 0 ? <p className="empty">No saved trips yet.</p> : savedTrips.map((trip) => <article className="trip-row" key={trip.id}><div><strong>{trip.name}</strong><span>{trip.form.destination} · {dayCount(trip.form.startDate, trip.form.endDate)} days · {new Date(trip.updatedAt).toLocaleDateString()}</span></div><div><button onClick={() => loadTrip(trip)}>Open</button><button onClick={() => renameTrip(trip.id)}>Rename</button><button onClick={() => duplicateSavedTrip(trip)}>Duplicate</button><button className="danger" onClick={() => deleteTrip(trip.id)}>Delete</button></div></article>)}</aside></div>}
-
-      <nav className="bottom-nav" aria-label="Mobile app actions"><a href="#planner">Plan</a><button type="button" onClick={() => setTripsOpen(true)}>Trips</button><a href="#itinerary">Days</a><button type="button" onClick={saveTrip}>Save</button><button type="button" onClick={() => setExportOpen((open) => !open)}>Export</button></nav>
-      {toast && <div className="toast" role="status"><span>{toast.message}</span>{toast.action && <button type="button" onClick={toast.action.run}>{toast.action.label}</button>}</div>}
+      {toast && <div className="toast">{toast}</div>}
     </main>
   )
+}
+
+function App() {
+  const { view, go } = useRoute()
+  if (view === 'marketing') return <MarketingPage go={go} />
+  if (view === 'login') return <LoginPage go={go} />
+  return <DashboardPage go={go} />
 }
 
 export default App
