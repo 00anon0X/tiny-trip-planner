@@ -5,6 +5,7 @@ import {
   decodeTripFromShare,
   encodeTripForShare,
   savedIdeaFromRecommendation,
+  sharePrintBrief,
   sortTripsForDashboard,
   tripQualityWarnings,
 } from './sprint'
@@ -39,6 +40,16 @@ describe('next sprint product helpers', () => {
     expect(encoded.length).toBeGreaterThan(20)
     expect(decoded?.name).toBe('Share test')
     expect(decoded?.form.destination).toBe(sampleTrip.destination)
+  })
+
+  it('builds a print-friendly handoff brief for shared trips', () => {
+    const trip = makeSavedTrip(sampleTrip, { ...emptyLogistics, homeBaseName: 'Hotel Alma', arrivalMode: 'Metro from airport', importantNotes: 'Bring rain jackets' }, generatePlan(sampleTrip), { name: 'Share test' })
+    const brief = sharePrintBrief(trip)
+
+    expect(brief.map((item) => item.label)).toContain('Home base')
+    expect(brief.find((item) => item.label === 'Home base')?.value).toContain('Hotel Alma')
+    expect(brief.find((item) => item.label === 'Arrival / departure')?.value).toContain('Metro from airport')
+    expect(brief.find((item) => item.label === 'Important notes')?.value).toContain('rain jackets')
   })
 
   it('provides checklist completion defaults', () => {

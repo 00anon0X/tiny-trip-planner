@@ -39,6 +39,7 @@ import {
   decodeTripFromShare,
   encodeTripForShare,
   savedIdeaFromRecommendation,
+  sharePrintBrief,
   shareUrl,
   sortTripsForDashboard,
   tripQualityWarnings,
@@ -130,10 +131,11 @@ function MarketingPage({ go }: { go: (view: View) => void }) {
 function SharePage({ go }: { go: (view: View) => void }) {
   const encoded = window.location.hash.match(/trip=([^&]+)/)?.[1] ?? ''
   const trip = decodeTripFromShare(encoded)
+  const brief = trip ? sharePrintBrief(trip) : []
   return (
     <main className="share-page">
       <nav className="marketing-nav"><button className="brand link-button" onClick={() => go('marketing')}><span>✈</span>Tiny Trip</button><button className="ghost compact" onClick={() => go('login')}>Open app</button></nav>
-      {!trip ? <section className="login-card"><p className="eyebrow">Shared trip</p><h1>Trip link missing or expired.</h1><p>Ask for a new Tiny Trip share link.</p><button className="primary" onClick={() => go('login')}>Open dashboard</button></section> : <section className="share-sheet"><p className="eyebrow">Shared itinerary</p><h1>{trip.name}</h1><p>{trip.form.destination} · {dayCount(trip.form.startDate, trip.form.endDate)} days · {trip.form.pace}</p>{trip.plan.map((day, index) => <article className="share-day" key={day.id}><h2>Day {index + 1}: {day.title}</h2><p>{formatDate(day.date)} · Backup: {day.rainyDay}</p>{day.activities.map((activity) => <div className="share-item" key={activity.id}><strong>{activity.slot} · {activity.title}</strong><span>{activity.note}</span><a href={googleMapsSearchUrl(trip.form.destination, activity.location || activity.title)} target="_blank">Map</a></div>)}</article>)}<button className="primary" onClick={() => window.print()}>Print itinerary</button></section>}
+      {!trip ? <section className="login-card"><p className="eyebrow">Shared trip</p><h1>Trip link missing or expired.</h1><p>Ask for a new Tiny Trip share link.</p><button className="primary" onClick={() => go('login')}>Open dashboard</button></section> : <section className="share-sheet"><p className="eyebrow">Shared itinerary</p><h1>{trip.name}</h1><p>{trip.form.destination} · {dayCount(trip.form.startDate, trip.form.endDate)} days · {trip.form.pace}</p><section className="share-brief" aria-label="Trip handoff details"><h2>Trip handoff</h2>{brief.map((item) => <div key={item.label}><span>{item.label}</span><strong>{item.value}</strong></div>)}</section>{trip.plan.map((day, index) => <article className="share-day" key={day.id}><h2>Day {index + 1}: {day.title}</h2><p>{formatDate(day.date)} · Backup: {day.rainyDay}</p>{day.activities.map((activity) => <div className="share-item" key={activity.id}><strong>{activity.slot} · {activity.title}</strong><span>{activity.note}</span><a href={googleMapsSearchUrl(trip.form.destination, activity.location || activity.title)} target="_blank">Map</a></div>)}</article>)}<button className="primary" onClick={() => window.print()}>Print itinerary</button></section>}
     </main>
   )
 }

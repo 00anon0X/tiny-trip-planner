@@ -27,6 +27,7 @@ export type ChecklistItem = { id: string; label: string; done: boolean; detail: 
 export type BudgetCategory = { label: string; low: number; high: number }
 export type BudgetSummary = { dailyLow: number; dailyHigh: number; totalLow: number; totalHigh: number; categories: BudgetCategory[] }
 export type QualityWarning = { id: string; severity: 'info' | 'warning'; title: string; detail: string }
+export type ShareBriefItem = { label: string; value: string }
 
 export function sortTripsForDashboard(trips: SavedTrip[]): TripCard[] {
   return [...trips]
@@ -77,6 +78,24 @@ export function decodeTripFromShare(encoded: string): SavedTrip | null {
 
 export function shareUrl(trip: SavedTrip, origin = typeof window !== 'undefined' ? window.location.origin : '') {
   return `${origin}/share#trip=${encodeTripForShare(trip)}`
+}
+
+export function sharePrintBrief(trip: SavedTrip): ShareBriefItem[] {
+  const logistics = trip.logistics
+  const dates = `${trip.form.startDate} → ${trip.form.endDate}`
+  const homeBase = [logistics.homeBaseName, logistics.homeBaseAddress].filter(Boolean).join(' · ')
+  const travelNotes = [logistics.arrivalMode && `Arrive: ${logistics.arrivalMode}`, logistics.departureMode && `Depart: ${logistics.departureMode}`].filter(Boolean).join(' · ')
+  const stayWindow = [logistics.checkInTime && `Check-in ${logistics.checkInTime}`, logistics.checkOutTime && `Check-out ${logistics.checkOutTime}`].filter(Boolean).join(' · ')
+
+  return [
+    { label: 'Dates', value: `${dates} · ${dayCount(trip.form.startDate, trip.form.endDate)} days` },
+    { label: 'Travelers', value: `${trip.form.travelers} traveler${trip.form.travelers === 1 ? '' : 's'} · ${trip.form.pace} pace · ${trip.form.budget}` },
+    { label: 'Interests', value: trip.form.interests.length ? trip.form.interests.join(', ') : 'No interests selected' },
+    { label: 'Home base', value: homeBase || 'Not added yet' },
+    { label: 'Arrival / departure', value: travelNotes || 'Not added yet' },
+    { label: 'Stay window', value: stayWindow || 'Not added yet' },
+    { label: 'Important notes', value: logistics.importantNotes || 'None' },
+  ]
 }
 
 export function checklistItems(form: TripForm, logistics: TripLogistics, plan: DayPlan[], isSaved: boolean): ChecklistItem[] {

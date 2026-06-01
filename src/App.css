@@ -152,6 +152,7 @@ details > label, details > .chips { margin-top: 12px; }
   .itinerary-toolbar div:last-child button, .itinerary-toolbar div:last-child a, .activity-quick-actions a, .activity-quick-actions button { flex: 1 1 120px; }
   .activity-quick-actions { justify-content: stretch; }
   .share-item { grid-template-columns: 1fr; }
+  .share-brief { grid-template-columns: 1fr; }
   .share-item a { grid-row: auto; }
 }
 @media print {
@@ -172,6 +173,11 @@ details > label, details > .chips { margin-top: 12px; }
 .share-sheet { width: min(920px, 100%); margin: 42px auto; padding: clamp(22px, 4vw, 46px); border: 1px solid var(--line); border-radius: 34px; background: rgba(255,255,255,.94); box-shadow: var(--shadow); }
 .share-sheet h1 { margin: 0; font-size: clamp(2rem, 5vw, 4rem); letter-spacing: -.07em; }
 .share-sheet > p { color: var(--muted); font-weight: 850; }
+.share-brief { margin-top: 22px; padding: 16px; border: 1px solid var(--line); border-radius: 22px; background: #fffaf4; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.share-brief h2 { grid-column: 1 / -1; margin: 0; letter-spacing: -.04em; }
+.share-brief div { display: grid; gap: 3px; padding-top: 10px; border-top: 1px solid #f1e7dd; }
+.share-brief span { color: var(--muted); font-size: .78rem; font-weight: 900; letter-spacing: .08em; text-transform: uppercase; }
+.share-brief strong { line-height: 1.35; }
 .share-day { margin-top: 20px; padding-top: 20px; border-top: 1px solid var(--line); }
 .share-day h2 { margin: 0 0 6px; letter-spacing: -.04em; }
 .share-day > p { margin: 0 0 12px; color: var(--muted); font-weight: 750; }
