@@ -9,13 +9,13 @@ import {
   formatDate,
   generatePlan,
   googleIdeasUrl,
+  googleDirectionsUrl,
   googleMapsSearchUrl,
   interests,
   makeSavedTrip,
   parseImportedTrip,
   photoForDestination,
   presets,
-  safeReadJson,
   sampleTrip,
   slotOrder,
   tripToIcs,
@@ -49,13 +49,37 @@ import {
 } from './lib/sprint'
 import {
   buildShareSummary,
-  featuredItineraries,
   getDashboardRecommendations,
   getTravelerTrends,
   tripReadiness,
   type DashboardRecommendation,
-  type FeaturedItinerary,
 } from './lib/dashboard'
+import {
+  addIdeaToPlanDay,
+  buildTimeline,
+  categorizeIdea,
+  cloneTemplateToDraft,
+  defaultOnboarding,
+  expandedTemplates,
+  filterSavedIdeas,
+  filterTemplates,
+  forkSharedTrip,
+  nextOnboardingStep,
+  onboardingProgress,
+  previousOnboardingStep,
+  rewriteTripPlan,
+  safeReadStorageJson,
+  safeWriteStorageJson,
+  searchTrips,
+  selectedTimelineDays,
+  shouldShowOnboarding,
+  timelineSummary,
+  validateOnboardingStep,
+  type IdeaCategory,
+  type OnboardingState,
+  type TimelineMode,
+  type TripTemplate,
+} from './lib/enhancements'
 
 const KEYS = {
   form: 'tinytrip:form',
@@ -65,6 +89,7 @@ const KEYS = {
   active: 'tinytrip:activeTripId',
   ideas: 'tinytrip:savedIdeas',
   checklist: 'tinytrip:checklistDone',
+  onboarding: 'tinytrip:onboarding',
 }
 
 function downloadText(filename: string, content: string, type: string) {
@@ -81,11 +106,6 @@ function slug(value: string) {
   return value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'tiny-trip'
 }
 
-function endDateFrom(startDate: string, days: number) {
-  const date = new Date(`${startDate}T00:00:00`)
-  date.setDate(date.getDate() + Math.max(days - 1, 0))
-  return date.toISOString().slice(0, 10)
-}
 
 function useRoute() {
   const [view, setView] = useState<View>(() => resolveView(window.location.pathname))
@@ -134,10 +154,21 @@ function SharePage({ go }: { go: (view: View) => void }) {
   const encoded = window.location.hash.match(/trip=([^&]+)/)?.[1] ?? ''
   const trip = decodeTripFromShare(encoded)
   const brief = trip ? sharePrintBrief(trip) : []
+  function forkTrip() {
+    if (!trip) return
+    const fork = forkSharedTrip(trip)
+    const saved = safeReadStorageJson<SavedTrip[]>(localStorage, KEYS.saved, []).value
+    safeWriteStorageJson(localStorage, KEYS.form, fork.form)
+    safeWriteStorageJson(localStorage, KEYS.logistics, fork.logistics)
+    safeWriteStorageJson(localStorage, KEYS.plan, fork.plan)
+    safeWriteStorageJson(localStorage, KEYS.saved, upsertSavedTrip(saved, fork))
+    localStorage.setItem(KEYS.active, fork.id)
+    go('dashboard')
+  }
   return (
     <main className="share-page">
       <nav className="marketing-nav"><button className="brand link-button" onClick={() => go('marketing')}><span>✈</span>Tiny Trip</button><button className="ghost compact" onClick={() => go('login')}>Open app</button></nav>
-      {!trip ? <section className="login-card"><p className="eyebrow">Shared trip</p><h1>Trip link missing or expired.</h1><p>Ask for a new Tiny Trip share link.</p><button className="primary" onClick={() => go('login')}>Open dashboard</button></section> : <section className="share-sheet"><p className="eyebrow">Shared itinerary</p><h1>{trip.name}</h1><p>{trip.form.destination} · {dayCount(trip.form.startDate, trip.form.endDate)} days · {trip.form.pace}</p><section className="share-brief" aria-label="Trip handoff details"><h2>Trip handoff</h2>{brief.map((item) => <div key={item.label}><span>{item.label}</span><strong>{item.value}</strong></div>)}</section>{trip.plan.map((day, index) => <article className="share-day" key={day.id}><h2>Day {index + 1}: {day.title}</h2><p>{formatDate(day.date)} · Backup: {day.rainyDay}</p>{day.activities.map((activity) => <div className="share-item" key={activity.id}><strong>{activity.slot} · {activity.title}</strong><span>{activity.note}</span><a href={googleMapsSearchUrl(trip.form.destination, activity.location || activity.title)} target="_blank">Map</a></div>)}</article>)}<button className="primary" onClick={() => window.print()}>Print itinerary</button></section>}
+      {!trip ? <section className="login-card"><p className="eyebrow">Shared trip</p><h1>Trip link missing or expired.</h1><p>Ask for a new Tiny Trip share link.</p><button className="primary" onClick={() => go('login')}>Open dashboard</button></section> : <section className="share-sheet"><p className="eyebrow">Shared itinerary</p><h1>{trip.name}</h1><p>{trip.form.destination} · {dayCount(trip.form.startDate, trip.form.endDate)} days · {trip.form.pace}</p><section className="share-brief" aria-label="Trip handoff details"><h2>Trip handoff</h2>{brief.map((item) => <div key={item.label}><span>{item.label}</span><strong>{item.value}</strong></div>)}</section>{trip.plan.map((day, index) => <article className="share-day" key={day.id}><h2>Day {index + 1}: {day.title}</h2><p>{formatDate(day.date)} · Backup: {day.rainyDay}</p>{day.activities.map((activity) => <div className="share-item" key={activity.id}><strong>{activity.slot} · {activity.title}</strong><span>{activity.note}</span><a href={googleMapsSearchUrl(trip.form.destination, activity.location || activity.title)} target="_blank">Map</a></div>)}</article>)}<div className="share-actions"><button className="primary" onClick={forkTrip}>Use this trip</button><button className="ghost" onClick={() => window.print()}>Print itinerary</button></div></section>}
     </main>
   )
 }
@@ -158,15 +189,22 @@ function LoginPage({ go }: { go: (view: View) => void }) {
 }
 
 function DashboardPage({ go }: { go: (view: View) => void }) {
-  const [form, setForm] = useState<TripForm>(() => safeReadJson(localStorage.getItem(KEYS.form), sampleTrip))
-  const [logistics, setLogistics] = useState<TripLogistics>(() => safeReadJson(localStorage.getItem(KEYS.logistics), emptyLogistics))
-  const [plan, setPlan] = useState<DayPlan[]>(() => safeReadJson(localStorage.getItem(KEYS.plan), generatePlan(sampleTrip)))
-  const [savedTrips, setSavedTrips] = useState<SavedTrip[]>(() => safeReadJson(localStorage.getItem(KEYS.saved), []))
-  const [savedIdeas, setSavedIdeas] = useState<SavedIdea[]>(() => safeReadJson(localStorage.getItem(KEYS.ideas), []))
-  const [checklistDone, setChecklistDone] = useState<string[]>(() => safeReadJson(localStorage.getItem(KEYS.checklist), []))
+  const [form, setForm] = useState<TripForm>(() => safeReadStorageJson(localStorage, KEYS.form, sampleTrip).value)
+  const [logistics, setLogistics] = useState<TripLogistics>(() => safeReadStorageJson(localStorage, KEYS.logistics, emptyLogistics).value)
+  const [plan, setPlan] = useState<DayPlan[]>(() => safeReadStorageJson(localStorage, KEYS.plan, generatePlan(sampleTrip)).value)
+  const [savedTrips, setSavedTrips] = useState<SavedTrip[]>(() => safeReadStorageJson(localStorage, KEYS.saved, []).value)
+  const [savedIdeas, setSavedIdeas] = useState<SavedIdea[]>(() => safeReadStorageJson(localStorage, KEYS.ideas, []).value)
+  const [checklistDone, setChecklistDone] = useState<string[]>(() => safeReadStorageJson(localStorage, KEYS.checklist, []).value)
   const [activeTripId, setActiveTripId] = useState<string>(() => localStorage.getItem(KEYS.active) ?? '')
   const [panel, setPanel] = useState<'overview' | 'setup' | 'saved' | 'explore' | 'share' | 'export'>('overview')
   const [toast, setToast] = useState('')
+  const [timelineMode, setTimelineMode] = useState<TimelineMode>('all')
+  const [tripSearch, setTripSearch] = useState('')
+  const [ideaSearch, setIdeaSearch] = useState('')
+  const [templateSearch, setTemplateSearch] = useState('')
+  const [ideaCategory, setIdeaCategory] = useState<IdeaCategory | 'All'>('All')
+  const [ideaTargetDay, setIdeaTargetDay] = useState('')
+  const [onboarding, setOnboarding] = useState<OnboardingState>(() => safeReadStorageJson(localStorage, KEYS.onboarding, defaultOnboarding).value)
 
   const days = useMemo(() => dayCount(form.startDate, form.endDate), [form.startDate, form.endDate])
   const currentTrip = useMemo(() => makeSavedTrip(form, logistics, plan, savedTrips.find((trip) => trip.id === activeTripId)), [activeTripId, form, logistics, plan, savedTrips])
@@ -177,6 +215,12 @@ function DashboardPage({ go }: { go: (view: View) => void }) {
   const shareSummary = useMemo(() => buildShareSummary(currentTrip), [currentTrip])
   const tripCards = useMemo(() => sortTripsForDashboard(savedTrips), [savedTrips])
   const savedIdeaCards = useMemo(() => sortSavedIdeas(savedIdeas), [savedIdeas])
+  const visibleIdeas = useMemo(() => filterSavedIdeas(savedIdeaCards, ideaSearch, ideaCategory), [ideaCategory, ideaSearch, savedIdeaCards])
+  const visibleSavedTrips = useMemo(() => searchTrips(savedTrips, tripSearch), [savedTrips, tripSearch])
+  const visibleTemplates = useMemo(() => filterTemplates(expandedTemplates, templateSearch), [templateSearch])
+  const timeline = useMemo(() => buildTimeline(plan), [plan])
+  const visiblePlan = useMemo(() => selectedTimelineDays(timeline, timelineMode), [timeline, timelineMode])
+  const timelineInfo = useMemo(() => timelineSummary(plan), [plan])
   const checklist = useMemo(() => checklistItems(form, logistics, plan, Boolean(activeSavedTrip)).map((item) => ({ ...item, done: item.done || checklistDone.includes(item.id) })), [activeSavedTrip, checklistDone, form, logistics, plan])
   const budget = useMemo(() => budgetSnapshot(form, plan), [form, plan])
   const qualityWarnings = useMemo(() => tripQualityWarnings(form, logistics, plan), [form, logistics, plan])
@@ -185,14 +229,18 @@ function DashboardPage({ go }: { go: (view: View) => void }) {
   const error = !form.destination.trim() ? 'Destination required.' : days < 1 ? 'End date must be after start date.' : days > 14 ? 'Max 14 days.' : ''
 
   useEffect(() => {
-    localStorage.setItem(KEYS.form, JSON.stringify(form))
-    localStorage.setItem(KEYS.plan, JSON.stringify(plan))
-    localStorage.setItem(KEYS.logistics, JSON.stringify(logistics))
-    localStorage.setItem(KEYS.saved, JSON.stringify(savedTrips))
-    localStorage.setItem(KEYS.ideas, JSON.stringify(savedIdeas))
-    localStorage.setItem(KEYS.checklist, JSON.stringify(checklistDone))
-    if (activeTripId) localStorage.setItem(KEYS.active, activeTripId)
-  }, [activeTripId, checklistDone, form, logistics, plan, savedIdeas, savedTrips])
+    const writes = [
+      safeWriteStorageJson(localStorage, KEYS.form, form),
+      safeWriteStorageJson(localStorage, KEYS.plan, plan),
+      safeWriteStorageJson(localStorage, KEYS.logistics, logistics),
+      safeWriteStorageJson(localStorage, KEYS.saved, savedTrips),
+      safeWriteStorageJson(localStorage, KEYS.ideas, savedIdeas),
+      safeWriteStorageJson(localStorage, KEYS.checklist, checklistDone),
+      safeWriteStorageJson(localStorage, KEYS.onboarding, onboarding),
+    ]
+    if (activeTripId) localStorage.setItem(KEYS.active, activeTripId); else localStorage.removeItem(KEYS.active)
+    if (writes.some((item) => !item.ok)) console.warn('Tiny Trip local save blocked; export a backup.')
+  }, [activeTripId, checklistDone, form, logistics, onboarding, plan, savedIdeas, savedTrips])
 
   useEffect(() => {
     if (!toast) return
@@ -217,12 +265,28 @@ function DashboardPage({ go }: { go: (view: View) => void }) {
   function addActivity(dayId: string) {
     setPlan((current) => current.map((day) => day.id === dayId ? { ...day, activities: [...day.activities, { id: `${day.id}-${Date.now()}`, slot: 'Flex', title: 'New item', note: 'Add detail here.', cost: '$', location: '' }] } : day))
   }
+  function moveActivity(dayId: string, activityId: string, direction: -1 | 1) {
+    setPlan((current) => current.map((day) => {
+      if (day.id !== dayId) return day
+      const index = day.activities.findIndex((activity) => activity.id === activityId)
+      const target = index + direction
+      if (index < 0 || target < 0 || target >= day.activities.length) return day
+      const activities = [...day.activities]
+      const [activity] = activities.splice(index, 1)
+      activities.splice(target, 0, activity)
+      return { ...day, activities }
+    }))
+  }
+  function rewrite(intent: 'relaxed' | 'cheaper' | 'rainy' | 'foodier' | 'family') {
+    setPlan((current) => rewriteTripPlan(form, current, intent))
+    notify('Plan rewritten')
+  }
   function saveIdea(rec: DashboardRecommendation) {
     setSavedIdeas((current) => [savedIdeaFromRecommendation(rec, form.destination), ...current.filter((idea) => idea.title !== rec.title)])
     notify('Saved for later')
   }
-  function addSavedIdea(idea: SavedIdea) {
-    setPlan((current) => current.map((day, index) => index === 0 ? { ...day, activities: [...day.activities, { id: `${day.id}-${idea.id}-${Date.now()}`, slot: idea.slot, title: idea.title, note: idea.reason, cost: idea.cost, location: idea.title }] } : day))
+  function addSavedIdea(idea: SavedIdea, dayId = ideaTargetDay || plan[0]?.id || '') {
+    setPlan((current) => addIdeaToPlanDay(current, idea, dayId, form.destination))
     setSavedIdeas((current) => removeSavedIdea(current, idea.id))
     notify('Idea added')
   }
@@ -238,11 +302,12 @@ function DashboardPage({ go }: { go: (view: View) => void }) {
     setPlan((current) => current.map((day, index) => index === 0 ? { ...day, activities: [...day.activities, { id: `${day.id}-${rec.id}-${Date.now()}`, slot: rec.slot, title: rec.title, note: rec.reason, cost: rec.cost, location: rec.title }] } : day))
     notify('Recommendation added')
   }
-  function cloneTemplate(template: FeaturedItinerary) {
-    const nextForm = { ...sampleTrip, destination: template.destination, interests: template.tags.slice(0, 3), pace: 'Balanced' as Pace, startDate: form.startDate, endDate: endDateFrom(form.startDate, template.days) }
+  function cloneTemplate(template: TripTemplate) {
+    const draft = cloneTemplateToDraft(template, form.startDate)
+    const nextForm = draft.form
     setForm(nextForm)
-    setLogistics(emptyLogistics)
-    setPlan(generatePlan(nextForm))
+    setLogistics(draft.logistics)
+    setPlan(draft.plan)
     setActiveTripId('')
     setPanel('overview')
     notify('Template cloned')
@@ -293,12 +358,12 @@ function DashboardPage({ go }: { go: (view: View) => void }) {
           <aside className="control-card">
             {panel === 'overview' && <div className="panel-stack">
               <h2>Dashboard</h2>
-              <section className="readiness-card"><div><strong>{readiness.score}%</strong><span>Trip readiness</span></div><progress value={readiness.score} max="100" />{readiness.items.map((item) => <p key={item.label} className={item.done ? 'done' : ''}>{item.done ? '✓' : '•'} {item.label}</p>)}</section>
+              {shouldShowOnboarding(onboarding, savedTrips) && <section className="mini-card onboarding-card"><div className="mini-card-heading"><h3>Quick start wizard</h3><span>{onboardingProgress(onboarding.step).percent}%</span></div><p><b>{onboarding.step}</b> · {validateOnboardingStep(onboarding.step, form, logistics).message || 'Looks good.'}</p><div className="button-row"><button onClick={() => setOnboarding((current) => ({ ...current, step: previousOnboardingStep(current.step) }))}>Back</button><button onClick={() => setOnboarding((current) => ({ ...current, skipped: true }))}>Skip</button><button className="primary" onClick={() => setOnboarding((current) => current.step === 'review' ? { ...current, completed: true } : { ...current, step: nextOnboardingStep(current.step) })}>Next</button></div></section>}<section className="readiness-card"><div><strong>{readiness.score}%</strong><span>Trip readiness</span></div><progress value={readiness.score} max="100" />{readiness.items.map((item) => <p key={item.label} className={item.done ? 'done' : ''}>{item.done ? '✓' : '•'} {item.label}</p>)}</section><section className="mini-card timeline-card"><h3>Trip timeline</h3><p><b>{timelineInfo.label}</b><br />{timelineInfo.detail}</p><div className="chips">{(['all','today','upcoming'] as TimelineMode[]).map((mode) => <button key={mode} className={timelineMode === mode ? 'selected' : ''} onClick={() => setTimelineMode(mode)}>{mode}</button>)}</div></section>
               <section className="mini-card"><h3>Recommended next</h3>{recommendations.slice(0, 3).map((rec) => <article className="recommend-row" key={rec.id}><div><b>{rec.title}</b><span>{rec.tag} · {rec.cost}</span></div><button onClick={() => addRecommendation(rec)}>Add</button></article>)}</section>
               <section className="mini-card"><h3>My Trips</h3>{tripCards.length === 0 ? <p>No saved trips yet. Save this draft to create your first trip card.</p> : tripCards.slice(0, 3).map((trip) => <article className="trip-card-row" key={trip.id}><div><b>{trip.title}</b><span>{trip.destination} · {trip.days} days · {trip.readiness}% ready</span></div><button onClick={() => setPanel('saved')}>Open</button></article>)}</section>
               <section className="mini-card"><h3>Trip checklist</h3>{checklist.slice(0, 5).map((item) => <label className="check-row" key={item.id}><input type="checkbox" checked={item.done} onChange={() => toggleChecklist(item.id)} /> <span>{item.label}</span></label>)}</section>
               <section className="mini-card"><h3>Budget snapshot</h3><p><b>${budget.dailyLow}–${budget.dailyHigh}</b> / day · <b>${budget.totalLow}–${budget.totalHigh}</b> total</p>{budget.categories.map((cat) => <p key={cat.label}>{cat.label}: ${cat.low}–${cat.high}</p>)}</section>
-              <section className="mini-card"><h3>Trip quality</h3>{qualityWarnings.length === 0 ? <p>No major warnings.</p> : qualityWarnings.map((warning) => <p key={warning.id} className={warning.severity}><b>{warning.title}</b><br />{warning.detail}</p>)}</section>
+              <section className="mini-card"><h3>Trip quality</h3>{qualityWarnings.length === 0 ? <p>No major warnings.</p> : qualityWarnings.map((warning) => <div key={warning.id} className={`warning-action ${warning.severity}`}><p><b>{warning.title}</b><br />{warning.detail}</p>{warning.id === 'home-base' && <button onClick={() => setPanel('setup')}>Add home base</button>}{warning.id === 'packed' && <button onClick={() => rewrite('relaxed')}>Make lighter</button>}{warning.id === 'food' && <button onClick={() => rewrite('foodier')}>Add food anchor</button>}{warning.id === 'rain' && <button onClick={() => rewrite('rainy')}>Rain-proof</button>}</div>)}</section>
               <section className="mini-card"><h3>What travellers often do</h3>{trends.map((trend) => <p key={trend.label}><b>{trend.percent}%</b> {trend.label}</p>)}</section>
             </div>}
             {panel === 'setup' && <div className="panel-stack">
@@ -309,20 +374,20 @@ function DashboardPage({ go }: { go: (view: View) => void }) {
               <label>Preset<select onChange={(event) => event.target.value && setForm((current) => applyPreset(current, event.target.value))} defaultValue=""><option value="">Choose a preset...</option>{presets.map((preset) => <option key={preset.id} value={preset.id}>{preset.icon} {preset.label}</option>)}</select></label>
               <div className="chips">{(['Relaxed', 'Balanced', 'Packed'] as Pace[]).map((pace) => <button key={pace} className={form.pace === pace ? 'selected' : ''} onClick={() => update('pace', pace)}>{pace}</button>)}</div>
               <details><summary>Interests</summary><div className="chips">{interests.map((interest) => <button key={interest} className={form.interests.includes(interest) ? 'selected' : ''} onClick={() => update('interests', form.interests.includes(interest) ? form.interests.filter((item) => item !== interest) : [...form.interests, interest])}>{interest}</button>)}</div></details>
-              <details><summary>Logistics</summary><label>Home base<input value={logistics.homeBaseName} onChange={(event) => updateLogistics('homeBaseName', event.target.value)} placeholder="Hotel / apartment" /></label><label>Neighborhood<input value={logistics.homeBaseAddress} onChange={(event) => updateLogistics('homeBaseAddress', event.target.value)} /></label><label>Notes<textarea value={logistics.importantNotes} onChange={(event) => updateLogistics('importantNotes', event.target.value)} rows={3} /></label></details>
+              <details><summary>Logistics + notes</summary><label>Home base<input value={logistics.homeBaseName} onChange={(event) => updateLogistics('homeBaseName', event.target.value)} placeholder="Hotel / apartment" /></label><label>Neighborhood<input value={logistics.homeBaseAddress} onChange={(event) => updateLogistics('homeBaseAddress', event.target.value)} /></label><div className="split"><label>Arrival<input value={logistics.arrivalMode} onChange={(event) => updateLogistics('arrivalMode', event.target.value)} placeholder="Flight / train / taxi" /></label><label>Departure<input value={logistics.departureMode} onChange={(event) => updateLogistics('departureMode', event.target.value)} /></label></div><div className="split"><label>Check-in<input type="time" value={logistics.checkInTime} onChange={(event) => updateLogistics('checkInTime', event.target.value)} /></label><label>Check-out<input type="time" value={logistics.checkOutTime} onChange={(event) => updateLogistics('checkOutTime', event.target.value)} /></label></div><label>Trip notes<textarea value={logistics.importantNotes} onChange={(event) => updateLogistics('importantNotes', event.target.value)} rows={4} placeholder="Reservation codes, dietary notes, must-pack items, reminders…" /></label></details>
               {error && <p className="error">{error}</p>}
               <button className="primary" onClick={generate} disabled={Boolean(error)}>Generate plan</button>
               <button className="ghost" onClick={saveTrip}>Save trip</button>
             </div>}
-            {panel === 'explore' && <div className="panel-stack"><h2>Explore</h2><section className="mini-card"><h3>Recommendations</h3>{recommendations.map((rec) => <article className="recommend-row" key={rec.id}><div><b>{rec.title}</b><span>{rec.reason}</span></div><div><button onClick={() => addRecommendation(rec)}>Add</button><button onClick={() => saveIdea(rec)}>Save</button></div></article>)}</section><section className="mini-card"><div className="mini-card-heading"><h3>Saved for later</h3>{savedIdeaCards.length > 0 && <button className="text-button" onClick={clearSavedIdeas}>Clear all</button>}</div>{savedIdeaCards.length === 0 ? <p className="muted">No saved ideas yet. Save a recommendation to compare it before adding it to the plan.</p> : savedIdeaCards.map((idea) => <article className="recommend-row" key={idea.id}><div><b>{idea.title}</b><span>{idea.tag} · {idea.destination}</span><p>{idea.reason}</p></div><div><button onClick={() => addSavedIdea(idea)}>Add</button><button onClick={() => dismissSavedIdea(idea.id)}>Remove</button></div></article>)}</section><section className="mini-card"><h3>Highest-rated itineraries</h3>{featuredItineraries.map((template) => <article className="template-row" key={template.id}><div><b>{template.title}</b><span>{template.days} days · ★ {template.rating} · {template.saves} saves</span><p>{template.angle}</p></div><button onClick={() => cloneTemplate(template)}>Clone</button></article>)}</section></div>}
-            {panel === 'saved' && <div className="panel-stack"><h2>Saved trips</h2>{savedTrips.length === 0 ? <p className="muted">No saved trips yet.</p> : savedTrips.map((trip) => <article className="saved-row trip-card" key={trip.id}><strong>{trip.name}</strong><span>{trip.form.destination} · {dayCount(trip.form.startDate, trip.form.endDate)} days</span><div><button onClick={() => loadTrip(trip)}>Open</button><button onClick={() => setSavedTrips((current) => upsertSavedTrip(current, duplicateTrip(trip)))}>Duplicate</button><button onClick={() => setSavedTrips((current) => current.filter((item) => item.id !== trip.id))}>Delete</button></div></article>)}</div>}
+            {panel === 'explore' && <div className="panel-stack"><h2>Explore</h2><section className="mini-card"><h3>Recommendations</h3>{recommendations.map((rec) => <article className="recommend-row" key={rec.id}><div><b>{rec.title}</b><span>{rec.reason}</span></div><div><button onClick={() => addRecommendation(rec)}>Add</button><button onClick={() => saveIdea(rec)}>Save</button></div></article>)}</section><section className="mini-card"><div className="mini-card-heading"><h3>Saved for later</h3>{savedIdeaCards.length > 0 && <button className="text-button" onClick={clearSavedIdeas}>Clear all</button>}</div><input placeholder="Search saved ideas" value={ideaSearch} onChange={(event) => setIdeaSearch(event.target.value)} /><div className="chips">{(['All','Food','Culture','Outdoors','Shopping','Nightlife','Rainy day','Family','Other'] as (IdeaCategory | 'All')[]).map((cat) => <button key={cat} className={ideaCategory === cat ? 'selected' : ''} onClick={() => setIdeaCategory(cat)}>{cat}</button>)}</div><label>Add saved ideas to<select value={ideaTargetDay || plan[0]?.id || ''} onChange={(event) => setIdeaTargetDay(event.target.value)}>{plan.map((day, index) => <option key={day.id} value={day.id}>Day {index + 1} · {formatDate(day.date)}</option>)}</select></label>{visibleIdeas.length === 0 ? <p className="muted">No saved ideas match this filter.</p> : visibleIdeas.map((idea) => <article className="recommend-row" key={idea.id}><div><b>{idea.title}</b><span>{categorizeIdea(idea.tag, idea.title, idea.reason)} · {idea.destination}</span><p>{idea.reason}</p></div><div><button onClick={() => addSavedIdea(idea)}>Add to day</button><button onClick={() => dismissSavedIdea(idea.id)}>Remove</button></div></article>)}</section><section className="mini-card"><h3>Template library</h3><input placeholder="Search templates" value={templateSearch} onChange={(event) => setTemplateSearch(event.target.value)} />{visibleTemplates.map((template) => <article className="template-row" key={template.id}><div><b>{template.title}</b><span>{template.destination} · {template.days} days · ★ {template.rating} · {template.saves}</span><p>{template.angle}</p></div><button onClick={() => cloneTemplate(template)}>Clone</button></article>)}</section></div>}
+            {panel === 'saved' && <div className="panel-stack"><h2>Saved trips</h2><input placeholder="Search trips, cities, interests..." value={tripSearch} onChange={(event) => setTripSearch(event.target.value)} />{visibleSavedTrips.length === 0 ? <p className="muted">No saved trips match.</p> : visibleSavedTrips.map((trip) => <article className="saved-row trip-card" key={trip.id}><strong>{trip.name}</strong><span>{trip.form.destination} · {dayCount(trip.form.startDate, trip.form.endDate)} days</span><div><button onClick={() => loadTrip(trip)}>Open</button><button onClick={() => setSavedTrips((current) => upsertSavedTrip(current, duplicateTrip(trip)))}>Duplicate</button><button onClick={() => setSavedTrips((current) => current.filter((item) => item.id !== trip.id))}>Delete</button></div></article>)}</div>}
             {panel === 'share' && <div className="panel-stack"><h2>Share itinerary</h2><p className="muted">Friend-friendly summary. No public backend yet, so this copies the plan text.</p><textarea readOnly value={shareSummary} rows={10} /><label>Share link<input readOnly value={currentShareUrl} /></label><button className="primary" onClick={() => navigator.clipboard.writeText(currentShareUrl).then(() => notify('Share link copied'))}>Copy share link</button><button className="ghost" onClick={() => navigator.clipboard.writeText(shareSummary).then(() => notify('Share summary copied'))}>Copy share summary</button><button className="ghost" onClick={() => window.open(`/share#trip=${encodeTripForShare(currentTrip)}`, '_blank')}>Open share view</button><button className="ghost" onClick={() => window.print()}>Print share view</button></div>}
             {panel === 'export' && <div className="panel-stack"><h2>Export</h2><button className="ghost" onClick={() => navigator.clipboard.writeText(tripToMarkdown(currentTrip)).then(() => notify('Copied'))}>Copy Markdown</button><button className="ghost" onClick={() => exportFile('md')}>Download Markdown</button><button className="ghost" onClick={() => exportFile('json')}>Download JSON backup</button><button className="ghost" onClick={() => exportFile('ics')}>Download calendar</button><button className="ghost" onClick={() => window.print()}>Print</button><label className="file-button">Import JSON<input hidden type="file" accept="application/json,.json" onChange={(event) => { const file = event.target.files?.[0]; if (file) void importTrip(file) }} /></label></div>}
           </aside>
 
           <section className="itinerary-card">
-            <div className="itinerary-toolbar"><div><h2>Itinerary</h2><p>{activeSavedTrip ? `Editing ${activeSavedTrip.name}` : 'Unsaved draft'}</p></div><div><button className="ghost compact" onClick={saveTrip}>Save</button><a href={googleMapsSearchUrl(form.destination)} target="_blank">View map</a><a href={googleIdeasUrl(form)} target="_blank">Get ideas</a></div></div>
-            <div className="day-list">{plan.map((day, dayIndex) => <article className="simple-day" key={day.id}><header><span>Day {dayIndex + 1}</span><div><h3>{formatDate(day.date)} · {day.title}</h3><p>{day.dontMiss} · {day.estimatedSpend}</p></div></header><div className="intel"><b>Backup:</b> {day.rainyDay}</div>{day.activities.map((activity) => <div className="simple-activity" key={activity.id}><div className="activity-summary"><span>{activity.slot}</span><div><strong>{activity.title}</strong><p>{activity.note}</p></div><em>{activity.cost}</em></div><div className="activity-quick-actions"><a href={googleMapsSearchUrl(form.destination, activity.location || activity.title)} target="_blank">Map</a><button onClick={() => removeActivity(day.id, activity.id)}>Remove</button></div><details><summary>Edit details</summary><div className="activity-editor"><select value={activity.slot} onChange={(event) => updateActivity(day.id, activity.id, { slot: event.target.value as Slot })}>{slotOrder.map((slot) => <option key={slot}>{slot}</option>)}</select><input value={activity.title} onChange={(event) => updateActivity(day.id, activity.id, { title: event.target.value })} /><select value={activity.cost} onChange={(event) => updateActivity(day.id, activity.id, { cost: event.target.value as Cost })}>{costOptions.map((cost) => <option key={cost}>{cost}</option>)}</select><textarea value={activity.note} onChange={(event) => updateActivity(day.id, activity.id, { note: event.target.value })} rows={2} /></div></details></div>)}<button className="add-line" onClick={() => addActivity(day.id)}>+ Add item</button></article>)}</div>
+            <div className="itinerary-toolbar"><div><h2>Itinerary</h2><p>{activeSavedTrip ? `Editing ${activeSavedTrip.name}` : 'Unsaved draft'}</p></div><div><button className="ghost compact" onClick={saveTrip}>Save</button><button onClick={() => rewrite('relaxed')}>Lighter</button><button onClick={() => rewrite('cheaper')}>Cheaper</button><button onClick={() => rewrite('rainy')}>Rain-proof</button><a href={googleMapsSearchUrl(form.destination)} target="_blank">View map</a><a href={googleIdeasUrl(form)} target="_blank">Get ideas</a></div></div><div className="chips day-filter">{(['all','today','upcoming'] as TimelineMode[]).map((mode) => <button key={mode} className={timelineMode === mode ? 'selected' : ''} onClick={() => setTimelineMode(mode)}>{mode}</button>)}</div>
+            <div className="day-list">{visiblePlan.map((day) => <article className={`simple-day ${day.status}`} key={day.id}><header><span>Day {day.index + 1}</span><div><h3>{formatDate(day.date)} · {day.title}</h3><p>{day.dontMiss} · {day.estimatedSpend}</p></div></header><div className="intel"><b>Backup:</b> {day.rainyDay}</div>{day.activities.map((activity) => <div className="simple-activity" key={activity.id}><div className="activity-summary"><span>{activity.slot}</span><div><strong>{activity.title}</strong><p>{activity.note}</p></div><em>{activity.cost}</em></div><div className="activity-quick-actions"><a href={googleMapsSearchUrl(form.destination, activity.location || activity.title)} target="_blank">Map</a>{(logistics.homeBaseName || logistics.homeBaseAddress) && <a href={googleDirectionsUrl(logistics.homeBaseAddress || logistics.homeBaseName, activity.location || activity.title)} target="_blank">Directions</a>}<button onClick={() => moveActivity(day.id, activity.id, -1)}>↑</button><button onClick={() => moveActivity(day.id, activity.id, 1)}>↓</button><button onClick={() => removeActivity(day.id, activity.id)}>Remove</button></div><details><summary>Edit details</summary><div className="activity-editor"><select value={activity.slot} onChange={(event) => updateActivity(day.id, activity.id, { slot: event.target.value as Slot })}>{slotOrder.map((slot) => <option key={slot}>{slot}</option>)}</select><input value={activity.title} onChange={(event) => updateActivity(day.id, activity.id, { title: event.target.value })} /><select value={activity.cost} onChange={(event) => updateActivity(day.id, activity.id, { cost: event.target.value as Cost })}>{costOptions.map((cost) => <option key={cost}>{cost}</option>)}</select><textarea value={activity.note} onChange={(event) => updateActivity(day.id, activity.id, { note: event.target.value })} rows={2} /></div></details></div>)}<button className="add-line" onClick={() => addActivity(day.id)}>+ Add item</button></article>)}</div>
           </section>
         </section>
       </section>
