@@ -187,3 +187,18 @@ details > label, details > .chips { margin-top: 12px; }
 .share-item span { color: var(--muted); line-height: 1.45; }
 .share-item a { grid-row: span 2; align-self: center; }
 @media print { .app-sidebar, .marketing-nav, .toast, .hero-actions, button { display: none !important; } .share-page, .dashboard-page { background: white; padding: 0; } .share-sheet, .itinerary-card { box-shadow: none; border: 0; } }
+.quick-start-card { background: linear-gradient(135deg, #fff7ed, #fff); border-color: rgba(255,56,92,.18); }
+.quick-start-card h3 { font-size: 1.45rem; }
+.trip-health-card { background: linear-gradient(135deg, #1f1f1f, #3a4a5c); }
+.today-card { border-color: rgba(31,31,31,.16); background: linear-gradient(180deg, #ffffff, #f8fbff); }
+.handoff-card { background: #fffaf4; }
+.button-row { display: flex; flex-wrap: wrap; gap: 8px; }
+.compare-card { background: linear-gradient(180deg, #fff, #f7f5ff); }
+.compare-grid { display: grid; grid-template-columns: .8fr 1fr 1fr; gap: 8px; align-items: center; font-size: .92rem; }
+.compare-grid span, .compare-grid b { padding: 8px; border-radius: 10px; background: rgba(31,31,31,.04); min-width: 0; overflow-wrap: anywhere; }
+.compare-grid span:nth-child(3n+1) { color: var(--muted); font-weight: 900; background: transparent; }
+.warning-action.warning { border-left: 4px solid #f97316; }
+.warning-action.info { border-left: 4px solid #94a3b8; }
+.warning-action { padding: 10px 12px; border-radius: 14px; background: #faf9f7; display: grid; gap: 8px; }
+.warning-action button { justify-self: start; min-height: 36px; padding: 0 12px; border: 1px solid var(--line); border-radius: 999px; background: white; color: var(--accent-dark); font-weight: 900; }
+@media (max-width: 640px) { .compare-grid { grid-template-columns: 1fr; } .compare-grid span:nth-child(3n+1) { padding-top: 14px; } }
